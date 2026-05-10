@@ -6,6 +6,7 @@
   "scripts": {
   "start": "node src/server.js",
   "dev": "nodemon src/server.js",
+  "migrate": "node src/migrations/migrate.js",
   "test": "echo \"Tests coming in Sprint 3\""
 },
   "keywords": [],

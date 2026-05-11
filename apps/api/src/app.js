@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const authRoutes = require('./routes/auth.routes');
 
 const app = express();
 
@@ -20,7 +21,7 @@ app.get('/health', (req, res) => {
 // app.use('/api/auth', authRoutes);
 // app.use('/api/properties', propertyRoutes);
 // app.use('/api/bookings', bookingRoutes);
-
+app.use('/api/auth', authRoutes);
 // Global error handler — catches anything thrown in routes
 app.use((err, req, res, next) => {
   console.error(err.stack);

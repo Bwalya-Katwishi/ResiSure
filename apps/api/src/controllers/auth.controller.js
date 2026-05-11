@@ -1,79 +1,112 @@
+const PropertyService = require('../services/property.service');
 
+const PropertyController = {
 
-const AuthService = require('../services/auth.service');
-
-const AuthController = {
-
-  async register(req, res) {
+  async create(req, res) {
     try {
-      const { full_name, email, password, role, phone } = req.body;
-
-      // Basic input validation
-      if (!full_name || !email || !password || !role) {
-        return res.status(400).json({
-          success: false,
-          message: 'full_name, email, password and role are required'
-        });
-      }
-
-      if (password.length < 8) {
-        return res.status(400).json({
-          success: false,
-          message: 'Password must be at least 8 characters'
-        });
-      }
-
-      const { user, token } = await AuthService.register({ full_name, email, password, role, phone });
-
+      const property = await PropertyService.createProperty(req.user.id, req.body);
       return res.status(201).json({
         success: true,
-        message: 'Account created successfully',
-        data: { user, token }
+        message: 'Property listed successfully',
+        data: { property }
       });
-
     } catch (err) {
       return res.status(err.status || 500).json({
         success: false,
-        message: err.message || 'Registration failed'
+        message: err.message || 'Failed to create property'
       });
     }
   },
 
-  async login(req, res) {
+  async getAll(req, res) {
     try {
-      const { email, password } = req.body;
-
-      if (!email || !password) {
-        return res.status(400).json({
-          success: false,
-          message: 'Email and password are required'
-        });
-      }
-
-      const { user, token } = await AuthService.login({ email, password });
-
+      const filters = {
+        min_price: req.query.min_price,
+        max_price: req.query.max_price,
+        area: req.query.area,
+        verified: req.query.verified,
+        available: req.query.available,
+      };
+      const properties = await PropertyService.getAllProperties(filters);
       return res.status(200).json({
         success: true,
-        message: 'Login successful',
-        data: { user, token }
+        count: properties.length,
+        data: { properties }
       });
-
     } catch (err) {
       return res.status(err.status || 500).json({
         success: false,
-        message: err.message || 'Login failed'
+        message: err.message || 'Failed to fetch properties'
       });
     }
   },
 
-  async me(req, res) {
-    // req.user is already attached by the protect middleware
-    return res.status(200).json({
-      success: true,
-      data: { user: req.user }
-    });
+  async getOne(req, res) {
+    try {
+      const property = await PropertyService.getPropertyById(req.params.id);
+      return res.status(200).json({
+        success: true,
+        data: { property }
+      });
+    } catch (err) {
+      return res.status(err.status || 500).json({
+        success: false,
+        message: err.message || 'Failed to fetch property'
+      });
+    }
+  },
+
+  async getMyProperties(req, res) {
+    try {
+      const properties = await PropertyService.getLandlordProperties(req.user.id);
+      return res.status(200).json({
+        success: true,
+        count: properties.length,
+        data: { properties }
+      });
+    } catch (err) {
+      return res.status(err.status || 500).json({
+        success: false,
+        message: err.message || 'Failed to fetch your properties'
+      });
+    }
+  },
+
+  async update(req, res) {
+    try {
+      const property = await PropertyService.updateProperty(
+        req.params.id,
+        req.user.id,
+        req.body
+      );
+      return res.status(200).json({
+        success: true,
+        message: 'Property updated successfully',
+        data: { property }
+      });
+    } catch (err) {
+      return res.status(err.status || 500).json({
+        success: false,
+        message: err.message || 'Failed to update property'
+      });
+    }
+  },
+
+  async remove(req, res) {
+    try {
+      await PropertyService.deleteProperty(req.params.id, req.user.id);
+      return res.status(200).json({
+        success: true,
+        message: 'Property removed successfully'
+      });
+    } catch (err) {
+      return res.status(err.status || 500).json({
+        success: false,
+        message: err.message || 'Failed to delete property'
+      });
+    }
   },
 
 };
 
-module.exports = AuthController;
+module.exports = PropertyController;

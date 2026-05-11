@@ -17,6 +17,7 @@ const PropertyModel = {
     let query = `
       SELECT 
         p.*,
+        'ZMW' AS currency,
         u.full_name AS landlord_name,
         u.phone AS landlord_phone,
         lp.verification_status,
@@ -68,6 +69,7 @@ const PropertyModel = {
     const result = await pool.query(
       `SELECT 
         p.*,
+        'ZMW' AS currency,
         u.full_name AS landlord_name,
         u.phone AS landlord_phone,
         lp.verification_status,
@@ -88,7 +90,9 @@ const PropertyModel = {
 
   async findByLandlordId(landlord_id) {
     const result = await pool.query(
-      `SELECT p.*, 
+      `SELECT 
+        p.*,
+        'ZMW' AS currency,
         COALESCE(
           json_agg(pi.image_url) FILTER (WHERE pi.image_url IS NOT NULL),
           '[]'
@@ -116,7 +120,7 @@ const PropertyModel = {
         status = COALESCE($8, status),
         updated_at = NOW()
        WHERE id = $9
-       RETURNING *`,
+       RETURNING *, 'ZMW' AS currency`,
       [title, description, address, area, rent_per_month, total_rooms, available_rooms, status, id]
     );
     return result.rows[0] || null;

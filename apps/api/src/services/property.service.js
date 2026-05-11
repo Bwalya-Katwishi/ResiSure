@@ -3,7 +3,6 @@ const PropertyModel = require('../models/property.model');
 const PropertyService = {
 
   async createProperty(user_id, data) {
-    // Get the landlord profile for this user
     const landlordProfile = await PropertyModel.getLandlordProfile(user_id);
     if (!landlordProfile) {
       throw { status: 404, message: 'Landlord profile not found' };
@@ -53,14 +52,13 @@ const PropertyService = {
   },
 
   async updateProperty(id, user_id, data) {
-    // Confirm the property belongs to this landlord
     const property = await PropertyModel.findById(id);
     if (!property) {
       throw { status: 404, message: 'Property not found' };
     }
 
     const landlordProfile = await PropertyModel.getLandlordProfile(user_id);
-    if (property.landlord_id !== landlordProfile.id) {
+    if (!landlordProfile || property.landlord_id !== landlordProfile.id) {
       throw { status: 403, message: 'You can only update your own properties' };
     }
 
@@ -74,7 +72,7 @@ const PropertyService = {
     }
 
     const landlordProfile = await PropertyModel.getLandlordProfile(user_id);
-    if (property.landlord_id !== landlordProfile.id) {
+    if (!landlordProfile || property.landlord_id !== landlordProfile.id) {
       throw { status: 403, message: 'You can only delete your own properties' };
     }
 

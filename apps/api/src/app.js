@@ -4,6 +4,9 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const authRoutes = require('./routes/auth.routes');
 const propertyRoutes = require('./routes/property.routes');
+const authRoutes = require('./routes/auth.routes');
+const propertyRoutes = require('./routes/property.routes');
+const bookingRoutes = require('./routes/booking.routes');
 
 const app = express();
 
@@ -24,6 +27,7 @@ app.get('/health', (req, res) => {
 // app.use('/api/bookings', bookingRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/properties', propertyRoutes);
+app.use('/api/bookings', bookingRoutes);
 
 // Global error handler — catches anything thrown in routes
 app.use((err, req, res, next) => {

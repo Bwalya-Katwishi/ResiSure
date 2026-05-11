@@ -3,7 +3,7 @@ const router = express.Router();
 const PropertyController = require('../controllers/property.controller');
 const { protect, restrictTo } = require('../middleware/auth.middleware');
 
-// Public routes — anyone can browse listings
+// Public routes — anyone can browse
 router.get('/', PropertyController.getAll);
 router.get('/:id', PropertyController.getOne);
 

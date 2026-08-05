@@ -7,6 +7,7 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "migrate": "node src/migrations/migrate.js",
+    "seed": "node src/migrations/seed.js",
     "test": "echo \"Tests coming in Sprint 3\""
   },
   "keywords": [],
@@ -15,12 +16,15 @@
   "type": "commonjs",
   "dependencies": {
     "bcryptjs": "^3.0.3",
+    "cloudinary": "^1.41.3",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
     "morgan": "^1.10.1",
+    "multer": "^2.2.0",
+    "multer-storage-cloudinary": "^4.0.0",
     "node-cron": "^4.2.1",
     "pg": "^8.20.0",
     "pg-hstore": "^2.3.4"

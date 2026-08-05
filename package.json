@@ -1,5 +1,18 @@
 {
-  "dependencies": {
-    "dotenv": "^16.4.5"
+  "name": "resisure",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ResiSure — Escrow-enabled student accommodation platform",
+  "workspaces": [
+    "apps/api",
+    "apps/web"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev --workspace=apps/api",
+    "dev:web": "npm run dev --workspace=apps/web",
+    "dev": "npm run dev:api & npm run dev:web",
+    "migrate": "npm run migrate --workspace=apps/api",
+    "seed": "npm run seed --workspace=apps/api",
+    "install:all": "npm install && npm install --workspace=apps/api && npm install --workspace=apps/web"
   }
 }

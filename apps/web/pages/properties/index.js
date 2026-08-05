@@ -97,8 +97,8 @@ export default function PropertiesPage() {
         <div>
           <p className="text-sm text-gray-500 mb-4">{properties.length} listing(s) found</p>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {properties.map(p => (
-              <PropertyCard key={p.id} property={p} />
+            {properties.map((p, index) => (
+              <PropertyCard key={p.id} property={p} index={index} />
             ))}
           </div>
         </div>

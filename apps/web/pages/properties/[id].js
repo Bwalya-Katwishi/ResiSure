@@ -93,10 +93,34 @@ export default function PropertyDetailPage() {
         {/* Main content */}
         <div className="lg:col-span-2">
 
-          {/* Image */}
-          <div className="h-64 bg-gradient-to-br from-blue-100 to-blue-200 rounded-2xl flex items-center justify-center mb-6">
-            <BedDouble size={60} className="text-blue-400" />
-          </div>
+          {/* Image gallery*/}
+         {/* Image gallery */}
+<div className="mb-6">
+  {Array.isArray(property.images) && property.images.length > 0 ? (
+    <div className="grid grid-cols-1 gap-2">
+      <div className="h-64 rounded-2xl overflow-hidden">
+        <img
+          src={property.images[0]}
+          alt={property.title}
+          className="w-full h-full object-cover"
+        />
+      </div>
+      {property.images.length > 1 && (
+        <div className={`grid gap-2 ${property.images.length === 2 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+          {property.images.slice(1, 3).map((img, i) => (
+            <div key={i} className="h-32 rounded-xl overflow-hidden">
+              <img src={img} alt="" className="w-full h-full object-cover" />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  ) : (
+    <div className="h-64 bg-gradient-to-br from-blue-100 to-blue-200 rounded-2xl flex items-center justify-center">
+      <BedDouble size={60} className="text-blue-400" />
+    </div>
+  )}
+</div>
 
           {/* Title and badges */}
           <div className="flex items-start justify-between gap-4 mb-4">

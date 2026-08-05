@@ -4,7 +4,6 @@ import toast from 'react-hot-toast';
 import Layout from '../../components/layout/Layout';
 import Badge from '../../components/ui/Badge';
 import { useAuth } from '../../context/AuthContext';
-import { getLandlordBookings } from '../../lib/api';
 import api from '../../lib/api';
 import { Shield, Users, AlertTriangle, CheckCircle } from 'lucide-react';
 

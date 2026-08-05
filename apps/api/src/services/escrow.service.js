@@ -8,28 +8,37 @@ const generateReference = () => {
 
 const EscrowService = {
 
-  // Student pays — funds move into escrow
+  // Student pays — funds move into escrow and move-in window opens
   async capturePayment(booking_id, actor_id) {
     const booking = await BookingModel.findById(booking_id);
 
     if (!booking) throw { status: 404, message: 'Booking not found' };
-    if (booking.status !== 'pending') {
+    if (booking.status !== 'accepted') {
       throw { status: 400, message: `Cannot pay for a booking with status: ${booking.status}` };
     }
     if (String(booking.student_id) !== String(actor_id)) {
       throw { status: 403, message: 'Only the student who made this booking can pay' };
     }
 
-    // Calculate when the move-in window opens (move_in_date)
-    // and when auto-release triggers (move_in_date + 72 hours)
+    const moveInDate = new Date(booking.move_in_date);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    moveInDate.setHours(0, 0, 0, 0);
+
+    if (moveInDate > today) {
+      throw {
+        status: 400,
+        message: 'Payment is only available on or after your move-in date',
+      };
+    }
+
     const moveInWindowOpens = new Date(booking.move_in_date);
     const autoReleaseAt = new Date(moveInWindowOpens);
     autoReleaseAt.setHours(autoReleaseAt.getHours() + 72);
 
-    // Update booking to escrow_held
     const updated = await pool.query(
       `UPDATE bookings SET
-        status = 'escrow_held',
+        status = 'move_in_window',
         escrow_held_at = NOW(),
         move_in_window_opens_at = $1,
         auto_release_at = $2,
@@ -39,7 +48,6 @@ const EscrowService = {
       [moveInWindowOpens, autoReleaseAt, booking_id]
     );
 
-    // Record the escrow transaction
     const reference = generateReference();
     await BookingModel.createEscrowTransaction({
       booking_id,
@@ -49,16 +57,40 @@ const EscrowService = {
       reference,
     });
 
-    // Audit log
     await BookingModel.logAudit({
       booking_id,
       actor_id,
-      from_status: 'pending',
-      to_status: 'escrow_held',
-      reason: `Payment captured into escrow. Reference: ${reference}`,
+      from_status: 'accepted',
+      to_status: 'move_in_window',
+      reason: `Payment captured into escrow. Move-in window opened. Reference: ${reference}`,
     });
 
     return updated.rows[0];
+  },
+
+  // Transition escrow_held bookings when move-in date arrives
+  async openMoveInWindows() {
+    const result = await pool.query(
+      `SELECT * FROM bookings
+       WHERE status = 'escrow_held'
+       AND move_in_window_opens_at IS NOT NULL
+       AND move_in_window_opens_at <= NOW()`
+    );
+
+    for (const booking of result.rows) {
+      await pool.query(
+        `UPDATE bookings SET status = 'move_in_window', updated_at = NOW() WHERE id = $1`,
+        [booking.id]
+      );
+
+      await BookingModel.logAudit({
+        booking_id: booking.id,
+        actor_id: booking.student_id,
+        from_status: 'escrow_held',
+        to_status: 'move_in_window',
+        reason: 'Move-in date reached — confirmation window opened',
+      });
+    }
   },
 
   // Student confirms move-in — funds released to landlord

@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS bookings (
   property_id UUID NOT NULL REFERENCES properties(id),
   status VARCHAR(30) NOT NULL DEFAULT 'pending' CHECK (status IN (
     'pending',
+    'accepted',
     'rejected',
     'escrow_held',
     'move_in_window',

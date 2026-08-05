@@ -9,6 +9,7 @@ import { BookOpen, Search, Shield, Clock, CheckCircle, AlertTriangle } from 'luc
 
 const statusConfig = {
   pending: { label: 'Pending Landlord', color: 'pending', icon: Clock },
+  accepted: { label: 'Awaiting Payment', color: 'pending', icon: Clock },
   rejected: { label: 'Rejected', color: 'rejected', icon: AlertTriangle },
   escrow_held: { label: 'Payment in Escrow', color: 'escrow', icon: Shield },
   move_in_window: { label: 'Confirm Move-In', color: 'pending', icon: Clock },
@@ -51,7 +52,7 @@ export default function StudentDashboard() {
   }
 
   const activeBookings = bookings.filter(b =>
-    ['pending', 'escrow_held', 'move_in_window', 'disputed'].includes(b.status)
+    ['pending', 'accepted', 'escrow_held', 'move_in_window', 'disputed'].includes(b.status)
   );
   const completedBookings = bookings.filter(b =>
     ['completed', 'confirmed', 'timed_out'].includes(b.status)

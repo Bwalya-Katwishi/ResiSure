@@ -64,7 +64,7 @@ const BookingService = {
     }
 
     await pool.query(
-      `UPDATE bookings SET status = 'escrow_held', updated_at = NOW() WHERE id = $1`,
+      `UPDATE bookings SET status = 'accepted', updated_at = NOW() WHERE id = $1`,
       [booking_id]
     );
 
@@ -72,7 +72,7 @@ const BookingService = {
       booking_id,
       actor_id: landlord_user_id,
       from_status: 'pending',
-      to_status: 'escrow_held',
+      to_status: 'accepted',
       reason: 'Booking accepted by landlord — awaiting student payment',
     });
 
@@ -148,12 +148,25 @@ const BookingService = {
     const booking = await BookingModel.findById(booking_id);
     if (!booking) throw { status: 404, message: 'Booking not found' };
 
-    // Students can only see their own bookings
-    if (user.role === 'student' && String(booking.student_id) !== String(user.id)) {
-      throw { status: 403, message: 'Access denied' };
+    if (user.role === 'admin') return booking;
+
+    if (user.role === 'student') {
+      if (String(booking.student_id) !== String(user.id)) {
+        throw { status: 403, message: 'Access denied' };
+      }
+      return booking;
     }
 
-    return booking;
+    if (user.role === 'landlord') {
+      const landlordProfile = await PropertyModel.getLandlordProfile(user.id);
+      const property = await PropertyModel.findById(booking.property_id);
+      if (!landlordProfile || property.landlord_id !== landlordProfile.id) {
+        throw { status: 403, message: 'Access denied' };
+      }
+      return booking;
+    }
+
+    throw { status: 403, message: 'Access denied' };
   },
 
 };

@@ -13,6 +13,7 @@ import Link from 'next/link';
 
 const statusConfig = {
   pending: { label: 'Pending Landlord Approval', color: 'pending', description: 'Waiting for the landlord to accept your booking request.' },
+  accepted: { label: 'Awaiting Payment', color: 'pending', description: 'Your landlord has accepted. Pay into escrow on your move-in date to secure the room.' },
   rejected: { label: 'Booking Rejected', color: 'rejected', description: 'The landlord has declined this booking request.' },
   escrow_held: { label: 'Payment in Escrow', color: 'escrow', description: 'Your payment is safely held in escrow. Funds will be released only after you confirm move-in.' },
   move_in_window: { label: 'Confirm Your Move-In', color: 'pending', description: 'You have 72 hours to confirm move-in or raise a dispute. If no action is taken, funds are auto-released.' },
@@ -155,7 +156,7 @@ export default function BookingDetailPage() {
             <div className="space-y-4">
               {[
                 { label: 'Booking Created', done: true, time: booking.created_at },
-                { label: 'Landlord Accepted', done: ['escrow_held','move_in_window','confirmed','completed','disputed','timed_out'].includes(booking.status), time: booking.escrow_held_at },
+                { label: 'Landlord Accepted', done: ['accepted','escrow_held','move_in_window','confirmed','completed','disputed','timed_out'].includes(booking.status), time: null },
                 { label: 'Payment Captured into Escrow', done: !!booking.escrow_held_at, time: booking.escrow_held_at },
                 { label: 'Move-in Window Opened', done: !!booking.move_in_window_opens_at, time: booking.move_in_window_opens_at },
                 { label: 'Student Confirmed Move-in', done: !!booking.confirmed_at, time: booking.confirmed_at },
@@ -217,25 +218,55 @@ export default function BookingDetailPage() {
           )}
 
           {/* Student — pay into escrow */}
-          {isStudent && booking.status === 'escrow_held' && (
+          {isStudent && booking.status === 'accepted' && (() => {
+            const moveInDate = new Date(booking.move_in_date);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            moveInDate.setHours(0, 0, 0, 0);
+            const canPay = moveInDate <= today;
+
+            return (
             <div className="bg-white rounded-xl border border-gray-100 p-5">
               <h3 className="font-bold text-gray-900 mb-2">Pay into Escrow</h3>
-              <p className="text-gray-500 text-sm mb-4">
-                Your landlord has accepted. Pay now to secure your room. Funds are held safely until you confirm move-in.
+              {canPay ? (
+                <>
+                  <p className="text-gray-500 text-sm mb-4">
+                    Your move-in date has arrived. Pay now to secure your room. Funds are held safely until you confirm move-in.
+                  </p>
+                  <div className="bg-blue-50 rounded-lg p-3 mb-4">
+                    <p className="text-xs text-blue-600 font-medium">Amount to pay</p>
+                    <p className="text-2xl font-bold text-blue-700">ZMW {Number(booking.amount).toLocaleString()}</p>
+                    <p className="text-xs text-blue-400 mt-1">Held in escrow — safe until move-in confirmed</p>
+                  </div>
+                  <button
+                    onClick={() => handleAction('pay', 'Payment captured into escrow!')}
+                    disabled={actionLoading}
+                    className="w-full bg-blue-600 text-white py-3 rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    <Shield size={14} />
+                    {actionLoading ? 'Processing...' : 'Pay into Escrow'}
+                  </button>
+                </>
+              ) : (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                  <p className="text-sm text-yellow-800 font-medium mb-1">Payment opens on move-in date</p>
+                  <p className="text-xs text-yellow-700">
+                    You can pay on {new Date(booking.move_in_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}.
+                    Your booking is secured once the landlord has accepted.
+                  </p>
+                </div>
+              )}
+            </div>
+            );
+          })()}
+
+          {/* Legacy escrow_held — awaiting move-in window */}
+          {isStudent && booking.status === 'escrow_held' && (
+            <div className="bg-white rounded-xl border border-gray-100 p-5">
+              <h3 className="font-bold text-gray-900 mb-2">Payment in Escrow</h3>
+              <p className="text-gray-500 text-sm">
+                Your payment is held securely. The move-in confirmation window will open on your move-in date.
               </p>
-              <div className="bg-blue-50 rounded-lg p-3 mb-4">
-                <p className="text-xs text-blue-600 font-medium">Amount to pay</p>
-                <p className="text-2xl font-bold text-blue-700">ZMW {Number(booking.amount).toLocaleString()}</p>
-                <p className="text-xs text-blue-400 mt-1">Held in escrow — safe until move-in</p>
-              </div>
-              <button
-                onClick={() => handleAction('pay', 'Payment captured into escrow!')}
-                disabled={actionLoading}
-                className="w-full bg-blue-600 text-white py-3 rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                <Shield size={14} />
-                {actionLoading ? 'Processing...' : 'Pay into Escrow'}
-              </button>
             </div>
           )}
 

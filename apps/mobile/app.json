@@ -1,0 +1,44 @@
+{
+  "expo": {
+    "name": "ResiSure",
+    "slug": "resisure",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "icon": "./assets/logo.png",
+    "splash": {
+      "image": "./assets/logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0047AB"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "zm.resisure.app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "ResiSure uses your location to pin the exact property position on your listing."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/logo.png",
+        "backgroundColor": "#0047AB"
+      },
+      "package": "zm.resisure.app",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "ResiSure uses your location to pin the exact property position on your listing."
+        }
+      ]
+    ],
+    "extra": {
+      "apiUrl": "http://localhost:5000"
+    }
+  }
+}

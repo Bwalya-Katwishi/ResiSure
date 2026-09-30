@@ -1,100 +1,132 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import Head from 'next/head';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { loginUser } from '../../lib/api';
-import { Home, Eye, EyeOff } from 'lucide-react';
+import { getApiErrorMessage } from '../../lib/userFeedback';
+import { getDashboardPath } from '../../hooks/useRequireAuth';
+import AuthShell from '../../components/auth/AuthShell';
+import { Eye, EyeOff } from 'lucide-react';
+
+function safeReturnUrl(value) {
+  if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//')) {
+    return null;
+  }
+  return value;
+}
 
 export default function LoginPage() {
   const [form, setForm] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const { login } = useAuth();
+  const [error, setError] = useState('');
+  const { login, user, loading: authLoading } = useAuth();
   const router = useRouter();
+
+  useEffect(() => {
+    if (!authLoading && user) {
+      router.replace(getDashboardPath(user.role));
+    }
+  }, [user, authLoading, router]);
+
+  useEffect(() => {
+    if (router.isReady && router.query.reason === 'session_expired') {
+      setError('Your session has expired. Please sign in again.');
+    }
+  }, [router.isReady, router.query.reason]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError('');
     setLoading(true);
     try {
-      const res = await loginUser(form);
-      const { token, user } = res.data.data;
-      login(token, user);
-      toast.success(`Welcome back, ${user.full_name.split(' ')[0]}!`);
-      if (user.role === 'landlord') router.push('/dashboard/landlord');
-      else if (user.role === 'admin') router.push('/dashboard/admin');
-      else router.push('/dashboard/student');
+      const res = await loginUser({
+        email: form.email.trim(),
+        password: form.password,
+      });
+      const { token, user: signedInUser } = res.data.data;
+      login(token, signedInUser);
+      toast.success(`Welcome back, ${signedInUser.full_name.split(' ')[0]}`);
+      const returnUrl = safeReturnUrl(router.query.returnUrl);
+      router.push(returnUrl || getDashboardPath(signedInUser.role));
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Login failed');
+      const message = getApiErrorMessage(err, 'We could not sign you in. Please try again.');
+      setError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 w-full max-w-md">
-
-        <Link href="/" className="flex items-center gap-2 mb-8">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-            <Home size={16} className="text-white" />
-          </div>
-          <span className="font-bold text-xl text-gray-900">ResiSure</span>
-        </Link>
-
-        <h1 className="text-2xl font-bold text-gray-900 mb-1">Welcome back</h1>
-        <p className="text-gray-500 text-sm mb-8">Sign in to your account to continue</p>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
+    <>
+      <Head>
+        <title>Sign in — ResiSure</title>
+      </Head>
+      <AuthShell
+        title="Sign in"
+        subtitle="Access your bookings, listings, and payments."
+        error={error}
+        footer={(
+          <p className="mt-6 text-center text-sm text-slate-500">
+            Don&apos;t have an account?{' '}
+            <Link href="/auth/register" className="font-medium text-blue-700 hover:underline">
+              Create an account
+            </Link>
+          </p>
+        )}
+      >
+        <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email address</label>
+            <label className="label" htmlFor="email">Email address</label>
             <input
+              id="email"
               type="email"
+              autoComplete="email"
               value={form.email}
-              onChange={e => setForm({ ...form, email: e.target.value })}
-              className="w-full border border-gray-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              onChange={(e) => { setForm({ ...form, email: e.target.value }); setError(''); }}
+              className="input"
               placeholder="you@example.com"
               required
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+            <div className="mb-1 flex items-center justify-between">
+              <label className="label mb-0" htmlFor="password">Password</label>
+              <Link href="/auth/forgot-password" className="text-xs font-medium text-blue-700 hover:underline">
+                Forgot password?
+              </Link>
+            </div>
             <div className="relative">
               <input
+                id="password"
                 type={showPassword ? 'text' : 'password'}
+                autoComplete="current-password"
                 value={form.password}
-                onChange={e => setForm({ ...form, password: e.target.value })}
-                className="w-full border border-gray-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-10"
+                onChange={(e) => { setForm({ ...form, password: e.target.value }); setError(''); }}
+                className="input pr-10"
                 placeholder="••••••••"
                 required
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-3 text-gray-400 hover:text-gray-600"
+                className="absolute right-3 top-3 text-slate-400 hover:text-slate-600"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
               >
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
           </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading ? 'Signing in...' : 'Sign In'}
+          <button type="submit" disabled={loading} className="btn-primary w-full py-3">
+            {loading ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
-
-        <p className="text-center text-sm text-gray-500 mt-6">
-          Don't have an account?{' '}
-          <Link href="/auth/register" className="text-blue-600 font-medium hover:underline">
-            Create one free
-          </Link>
-        </p>
-      </div>
-    </div>
+      </AuthShell>
+    </>
   );
 }

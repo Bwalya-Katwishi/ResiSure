@@ -1,162 +1,151 @@
+import { useState } from 'react';
+import Head from 'next/head';
+import { useRouter } from 'next/router';
 import Link from 'next/link';
 import Layout from '../components/layout/Layout';
-import { Shield, Search, CheckCircle, ArrowRight, Star, AlertTriangle } from 'lucide-react';
+import { ArrowRight, BadgeCheck, Search, ShieldCheck, Scale } from 'lucide-react';
 
 export default function HomePage() {
+  const router = useRouter();
+  const [search, setSearch] = useState({ area: '', max_price: '', property_type: '' });
+
+  const submitSearch = (e) => {
+    e.preventDefault();
+    const params = new URLSearchParams();
+    if (search.area) params.set('area', search.area);
+    if (search.max_price) params.set('max_price', search.max_price);
+    if (search.property_type) params.set('property_type', search.property_type);
+    router.push(`/properties${params.toString() ? `?${params}` : ''}`);
+  };
+
   return (
     <Layout>
-      {/* Hero */}
-      <div className="text-center py-16 md:py-24 page-enter">
-        <div className="inline-flex items-center gap-2 bg-blue-50 text-blue-700 text-xs font-semibold px-4 py-2 rounded-full mb-8 border border-blue-100">
-          <Shield size={12} />
-          Zambia's first escrow-protected student housing platform
-        </div>
-
-        <h1 className="text-4xl md:text-6xl font-bold text-gray-900 mb-6 leading-tight tracking-tight">
-          Find Student Housing<br />
-          <span className="text-blue-600">Without the Scams</span>
+      <Head>
+        <title>ResiSure — Verified student accommodation</title>
+      </Head>
+      <section className="rounded-2xl border border-brand-100 bg-gradient-to-br from-white via-white to-brand-50 px-5 py-10 shadow-card sm:rounded-3xl sm:px-6 sm:py-12 md:px-12 md:py-16">
+        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-brand-primary sm:text-sm">Student housing around UNZA and Lusaka</p>
+        <h1 className="max-w-3xl text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl md:text-5xl">
+          Find a room you can trust.
         </h1>
-
-        <p className="text-lg md:text-xl text-gray-500 mb-10 max-w-2xl mx-auto leading-relaxed">
-          ResiSure holds your payment in escrow until you confirm your move-in.
-          No more losing money to fake listings.
+        <p className="mt-4 max-w-2xl text-base leading-relaxed text-slate-600 md:text-lg">
+          Discover verified student accommodation around UNZA and Lusaka. Book with confidence, with your payment protected until you confirm your move-in.
         </p>
-
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-16">
-          <Link href="/properties" className="w-full sm:w-auto bg-blue-600 text-white px-8 py-4 rounded-xl font-semibold hover:bg-blue-700 transition-colors text-base flex items-center justify-center gap-2 shadow-sm">
-            Browse Listings <ArrowRight size={18} />
+        <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+          <Link href="/properties" className="btn-primary px-6 py-3">
+            Browse verified rooms
           </Link>
-          <Link href="/auth/register" className="w-full sm:w-auto bg-white text-gray-700 px-8 py-4 rounded-xl font-semibold border border-gray-200 hover:border-blue-300 hover:text-blue-600 transition-colors text-base text-center">
-            Create Free Account
+          <Link href="/auth/register?role=landlord" className="btn-secondary px-6 py-3">
+            List your property
           </Link>
         </div>
 
-        {/* Trust indicators */}
-        <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-gray-400">
-          {['No upfront risk', 'Verified landlords', 'Escrow protected', 'Free to join'].map((item, i) => (
-            <div key={i} className="flex items-center gap-1.5">
-              <CheckCircle size={14} className="text-green-500" />
-              <span>{item}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Problem banner */}
-      <div className="bg-red-50 border border-red-100 rounded-2xl p-6 md:p-8 mb-16">
-        <div className="flex items-start gap-4">
-          <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center flex-shrink-0">
-            <AlertTriangle size={20} className="text-red-500" />
+        <form onSubmit={submitSearch} className="mt-10 grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-4">
+          <div>
+            <label className="label" htmlFor="area">Where are you looking?</label>
+            <input
+              id="area"
+              className="input"
+              placeholder="UNZA, Roma, Chelstone"
+              value={search.area}
+              onChange={(e) => setSearch({ ...search, area: e.target.value })}
+            />
           </div>
           <div>
-            <h2 className="font-bold text-red-900 text-lg mb-2">The Problem We're Solving</h2>
-            <p className="text-red-700 text-sm leading-relaxed">
-              Over 80% of UNZA's 28,000+ students need off-campus housing. Scammers exploit this demand
-              by posting fake listings, collecting mobile money payments, and disappearing.
-              Existing platforms verify listings but don't protect payments — leaving students vulnerable.
-            </p>
+            <label className="label" htmlFor="budget">Price range</label>
+            <select
+              id="budget"
+              className="input"
+              value={search.max_price}
+              onChange={(e) => setSearch({ ...search, max_price: e.target.value })}
+            >
+              <option value="">Any budget</option>
+              <option value="1500">Up to K1,500</option>
+              <option value="2500">Up to K2,500</option>
+              <option value="4000">Up to K4,000</option>
+              <option value="6000">Up to K6,000</option>
+            </select>
           </div>
-        </div>
-      </div>
+          <div>
+            <label className="label" htmlFor="type">Property type</label>
+            <select
+              id="type"
+              className="input"
+              value={search.property_type}
+              onChange={(e) => setSearch({ ...search, property_type: e.target.value })}
+            >
+              <option value="">Any type</option>
+              <option value="room">Room</option>
+              <option value="shared">Shared</option>
+              <option value="apartment">Apartment</option>
+              <option value="studio">Studio</option>
+            </select>
+          </div>
+          <div className="flex items-end">
+            <button type="submit" className="btn-primary w-full py-2.5">
+              <Search size={16} />
+              Search rooms
+            </button>
+          </div>
+        </form>
+      </section>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-16">
+      <section className="mt-12 grid gap-4 md:grid-cols-3">
         {[
-          { value: '28,000+', label: 'UNZA Students', sub: 'needing housing' },
-          { value: '80%', label: 'Off-Campus', sub: 'forced into risky markets' },
-          { value: '4,150', label: 'On-Campus Beds', sub: 'severely limited' },
-          { value: '100%', label: 'Escrow Safe', sub: 'every transaction' },
-        ].map((stat, i) => (
-          <div key={i} className="bg-white rounded-xl border border-gray-100 p-4 text-center">
-            <div className="text-2xl md:text-3xl font-bold text-blue-600 mb-1">{stat.value}</div>
-            <div className="text-sm font-medium text-gray-900">{stat.label}</div>
-            <div className="text-xs text-gray-400 mt-0.5">{stat.sub}</div>
+          { icon: BadgeCheck, title: 'Verified rooms', copy: 'Listings are reviewed before they are available for student booking.' },
+          { icon: ShieldCheck, title: 'Payment protection', copy: 'Escrow-style protected payments stay held pending your move-in confirmation.' },
+          { icon: Scale, title: 'Dispute protection', copy: 'If something isn’t right, the payment can be held while the issue is reviewed.' },
+        ].map((item) => (
+          <div key={item.title} className="card p-5 sm:p-6">
+            <item.icon className="mb-4 text-blue-600" size={22} />
+            <h2 className="text-lg font-semibold text-slate-900">{item.title}</h2>
+            <p className="mt-2 text-sm leading-relaxed text-slate-600">{item.copy}</p>
           </div>
         ))}
-      </div>
+      </section>
 
-      {/* How it works */}
-      <div className="mb-16">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl font-bold text-gray-900 mb-3">How ResiSure Works</h2>
-          <p className="text-gray-500">Three steps to safe, scam-free accommodation</p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <section id="how-it-works" className="mt-16 scroll-mt-24">
+        <h2 className="text-2xl font-bold text-slate-900 md:text-3xl">How ResiSure works</h2>
+        <p className="mt-2 text-slate-500">Four simple steps from search to move-in.</p>
+        <div className="mt-8 grid gap-4 md:grid-cols-4">
           {[
-            {
-              icon: Search,
-              step: '01',
-              title: 'Browse Verified Listings',
-              desc: 'Find accommodation from verified landlords near UNZA. Filter by price, area, and verification status.',
-              color: 'bg-blue-50 text-blue-600',
-            },
-            {
-              icon: Shield,
-              step: '02',
-              title: 'Pay into Escrow',
-              desc: 'Your payment is held securely by ResiSure. The landlord receives nothing until you confirm move-in.',
-              color: 'bg-green-50 text-green-600',
-            },
-            {
-              icon: CheckCircle,
-              step: '03',
-              title: 'Confirm and Move In',
-              desc: 'Once you verify the property matches its listing, funds release to the landlord. Dispute if it doesn\'t.',
-              color: 'bg-purple-50 text-purple-600',
-            },
-          ].map((step, i) => (
-            <div key={i} className="relative bg-white rounded-2xl border border-gray-100 p-6 hover:shadow-md transition-shadow">
-              <div className="absolute -top-3 left-5 bg-gray-900 text-white text-xs font-bold px-2.5 py-1 rounded-lg">
-                {step.step}
-              </div>
-              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-4 ${step.color}`}>
-                <step.icon size={24} />
-              </div>
-              <h3 className="font-bold text-gray-900 mb-2 text-lg">{step.title}</h3>
-              <p className="text-gray-500 text-sm leading-relaxed">{step.desc}</p>
+            ['01', 'Find a room', 'Browse accommodation that fits your location and budget.'],
+            ['02', 'Book securely', 'Make your payment through the available payment options. Your payment is held while your booking is being completed.'],
+            ['03', 'Move in', 'Check the accommodation and confirm your move-in.'],
+            ['04', 'Landlord gets paid', 'Once the required confirmation is complete, the payment is released to the landlord.'],
+          ].map(([step, title, copy]) => (
+            <div key={step} className="card p-5">
+              <p className="text-sm font-semibold text-blue-600">{step}</p>
+              <h3 className="mt-2 font-semibold text-slate-900">{title}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-slate-600">{copy}</p>
             </div>
           ))}
         </div>
-      </div>
+      </section>
 
-      {/* Testimonial placeholder */}
-      <div className="bg-white rounded-2xl border border-gray-100 p-8 mb-16">
-        <div className="flex items-center gap-1 mb-4">
-          {[...Array(5)].map((_, i) => (
-            <Star key={i} size={16} className="text-yellow-400 fill-yellow-400" />
-          ))}
-        </div>
-        <p className="text-gray-700 text-lg leading-relaxed mb-4">
-          "ResiSure gave me peace of mind when looking for accommodation near UNZA.
-          Knowing my payment was protected until I confirmed move-in made all the difference."
-        </p>
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-            <span className="text-blue-600 font-bold text-sm">BK</span>
+      <section className="mt-16 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {[
+          ['28,000+', 'Students at UNZA'],
+          ['4,150', 'On-campus beds'],
+          ['Verified', 'Accommodation listings'],
+          ['Protected', 'Booking payments'],
+        ].map(([stat, label]) => (
+          <div key={label} className="card p-5">
+            <p className="text-2xl font-bold text-slate-900">{stat}</p>
+            <p className="mt-1 text-sm text-slate-500">{label}</p>
           </div>
-          <div>
-            <p className="font-medium text-gray-900 text-sm">Bwalya K.</p>
-            <p className="text-gray-400 text-xs">2nd Year Student, UNZA</p>
-          </div>
-        </div>
-      </div>
+        ))}
+      </section>
 
-      {/* CTA */}
-      <div className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-2xl p-10 md:p-14 text-center mb-8">
-        <h2 className="text-3xl font-bold text-white mb-3">Ready to find safe housing?</h2>
-        <p className="text-blue-100 mb-8 text-lg max-w-xl mx-auto">
-          Join students across Lusaka who book accommodation with confidence using ResiSure.
+      <section id="for-landlords" className="mt-12 scroll-mt-24 rounded-2xl bg-blue-600 px-5 py-10 text-white sm:mt-16 sm:rounded-3xl sm:px-8 sm:py-12 md:px-12">
+        <h2 className="max-w-2xl text-2xl font-bold sm:text-3xl">List a room and get paid after move-in.</h2>
+        <p className="mt-3 max-w-2xl text-blue-100">
+          Students book with greater confidence when listings are reviewed and payments are protected. You receive payment after the student confirms move-in.
         </p>
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-          <Link href="/auth/register" className="w-full sm:w-auto bg-white text-blue-600 px-8 py-4 rounded-xl font-semibold hover:bg-blue-50 transition-colors inline-flex items-center justify-center gap-2">
-            Create Free Account <ArrowRight size={18} />
-          </Link>
-          <Link href="/properties" className="w-full sm:w-auto bg-blue-500 text-white px-8 py-4 rounded-xl font-semibold hover:bg-blue-400 transition-colors text-center border border-blue-400">
-            Browse Listings
-          </Link>
-        </div>
-      </div>
+        <Link href="/auth/register?role=landlord" className="mt-6 inline-flex items-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-semibold text-blue-700 hover:bg-blue-50">
+          List your property <ArrowRight size={16} />
+        </Link>
+      </section>
     </Layout>
   );
 }

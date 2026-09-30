@@ -1,8 +1,11 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useAuth } from '../../context/AuthContext';
-import { Home, Search, BookOpen, LayoutDashboard, LogOut, Menu, X, Shield } from 'lucide-react';
+import { useEscapeKey } from '../../lib/useEscapeKey';
+import { LayoutDashboard, LogOut, Menu, X } from 'lucide-react';
+import NotificationBell from './NotificationBell';
+import Logo from '../brand/Logo';
 
 export default function Navbar() {
   const { user, logout } = useAuth();
@@ -20,148 +23,124 @@ export default function Navbar() {
     user?.role === 'admin' ? '/dashboard/admin' :
     '/dashboard/student';
 
-  const closeMenu = () => setMenuOpen(false);
+  const closeMenu = useCallback(() => setMenuOpen(false), []);
+  useEscapeKey(closeMenu, menuOpen);
+
+  const navLink = (href, label, active, mobile = false) => (
+    <Link
+      href={href}
+      onClick={closeMenu}
+      aria-current={active ? 'page' : undefined}
+      className={
+        mobile
+          ? `block rounded-xl px-3 py-3 text-base font-medium ${
+              active ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-50'
+            }`
+          : `text-sm font-medium ${active ? 'text-blue-700' : 'text-slate-600 hover:text-slate-900'}`
+      }
+    >
+      {label}
+    </Link>
+  );
+
+  const isActive = (path) => router.pathname === path || router.pathname.startsWith(`${path}/`);
+  const showBrowseRooms = !user || user.role === 'student' || user.role === 'admin';
+
+  const roleLinks = user?.role === 'landlord'
+    ? [
+        { href: '/dashboard/landlord#landlord-listings', label: 'My properties' },
+        { href: '/dashboard/landlord#landlord-booking-requests', label: 'Booking requests' },
+        { href: '/dashboard/landlord#landlord-active-bookings', label: 'Active bookings' },
+        { href: '/dashboard/landlord#landlord-completed-bookings', label: 'Completed bookings' },
+        { href: '/dashboard/landlord#landlord-verification', label: 'Verification' },
+      ]
+    : user?.role === 'student'
+      ? [
+          { href: '/favorites', label: 'Saved' },
+          { href: '/dashboard/student#student-bookings', label: 'My bookings' },
+        ]
+      : [];
 
   return (
-    <nav className="bg-white border-b border-gray-100 sticky top-0 z-50 shadow-sm">
-      <div className="max-w-6xl mx-auto px-4 py-3">
-        <div className="flex items-center justify-between">
+    <nav className="sticky top-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/90" aria-label="Main">
+      <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:h-16">
+        <Logo href="/" size="sm" onClick={closeMenu} />
 
-          {/* Logo */}
-          <Link href="/" onClick={closeMenu} className="flex items-center gap-2">
-            <div className="w-9 h-9 bg-blue-600 rounded-xl flex items-center justify-center shadow-sm">
-              <Shield size={18} className="text-white" />
-            </div>
-            <div>
-              <span className="font-bold text-lg text-gray-900">ResiSure</span>
-              <span className="hidden sm:block text-xs text-gray-400 leading-none">Safe Student Housing</span>
-            </div>
-          </Link>
-
-          {/* Desktop nav */}
-          <div className="hidden md:flex items-center gap-6">
-            <Link href="/properties" className={`flex items-center gap-1.5 text-sm font-medium transition-colors ${router.pathname === '/properties' ? 'text-blue-600' : 'text-gray-600 hover:text-blue-600'}`}>
-              <Search size={15} />
-              Browse
-            </Link>
-
-            {user && (
-              <Link href={dashboardPath} className={`flex items-center gap-1.5 text-sm font-medium transition-colors ${router.pathname.includes('/dashboard') ? 'text-blue-600' : 'text-gray-600 hover:text-blue-600'}`}>
-                <LayoutDashboard size={15} />
-                Dashboard
-              </Link>
-            )}
-
-            {user?.role === 'student' && (
-              <Link href="/bookings/my" className={`flex items-center gap-1.5 text-sm font-medium transition-colors ${router.pathname === '/bookings/my' ? 'text-blue-600' : 'text-gray-600 hover:text-blue-600'}`}>
-                <BookOpen size={15} />
-                My Bookings
-              </Link>
-            )}
-          </div>
-
-          {/* Desktop auth */}
-          <div className="hidden md:flex items-center gap-3">
-            {user ? (
-              <>
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                    <span className="text-blue-600 text-xs font-bold">
-                      {user.full_name.charAt(0).toUpperCase()}
-                    </span>
-                  </div>
-                  <div className="hidden lg:block">
-                    <p className="text-sm font-medium text-gray-900 leading-none">{user.full_name.split(' ')[0]}</p>
-                    <p className="text-xs text-gray-400 capitalize">{user.role}</p>
-                  </div>
-                </div>
-                <button
-                  onClick={handleLogout}
-                  className="flex items-center gap-1.5 text-sm text-red-500 hover:text-red-600 font-medium px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors"
-                >
-                  <LogOut size={15} />
-                  Logout
-                </button>
-              </>
-            ) : (
-              <>
-                <Link href="/auth/login" className="text-sm font-medium text-gray-600 hover:text-blue-600 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors">
-                  Login
-                </Link>
-                <Link href="/auth/register" className="text-sm font-semibold bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm">
-                  Get Started
-                </Link>
-              </>
-            )}
-          </div>
-
-          {/* Mobile hamburger */}
-          <button
-            onClick={() => setMenuOpen(!menuOpen)}
-            className="md:hidden p-2 rounded-lg text-gray-600 hover:bg-gray-100 transition-colors"
-          >
-            {menuOpen ? <X size={22} /> : <Menu size={22} />}
-          </button>
+        <div className="hidden items-center gap-6 lg:gap-7 md:flex">
+          {showBrowseRooms && navLink('/properties', 'Browse rooms', isActive('/properties'))}
+          {!user && navLink('/#how-it-works', 'How it works', false)}
+          {!user && navLink('/#for-landlords', 'For landlords', false)}
+          {user && navLink(dashboardPath, 'Dashboard', router.pathname.includes('/dashboard'))}
+          {roleLinks.map((link) => navLink(link.href, link.label, router.asPath.includes(link.href.split('#')[0])))}
         </div>
 
-        {/* Mobile menu */}
-        {menuOpen && (
-          <div className="md:hidden mt-3 pb-3 border-t border-gray-100 pt-3 space-y-1">
-            <Link href="/properties" onClick={closeMenu} className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
-              <Search size={16} className="text-gray-400" />
-              Browse Listings
-            </Link>
-
-            {user && (
-              <Link href={dashboardPath} onClick={closeMenu} className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
-                <LayoutDashboard size={16} className="text-gray-400" />
-                Dashboard
+        <div className="hidden items-center gap-3 md:flex">
+          {user ? (
+            <>
+              <NotificationBell />
+              <Link href={dashboardPath} className="flex items-center gap-2 text-sm text-slate-700">
+                <LayoutDashboard size={15} aria-hidden="true" />
+                {user.full_name.split(' ')[0]}
               </Link>
-            )}
+              <button type="button" onClick={handleLogout} className="inline-flex min-h-0 items-center gap-1 text-sm text-slate-500 hover:text-red-600">
+                <LogOut size={14} aria-hidden="true" />
+                Sign out
+              </button>
+            </>
+          ) : (
+            <>
+              <Link href="/auth/login" className="text-sm font-medium text-slate-600 hover:text-slate-900">Sign in</Link>
+              <Link href="/auth/register" className="btn-primary px-4 py-2">Create account</Link>
+            </>
+          )}
+        </div>
 
-            {user?.role === 'student' && (
-              <Link href="/bookings/my" onClick={closeMenu} className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
-                <BookOpen size={16} className="text-gray-400" />
-                My Bookings
-              </Link>
-            )}
-
-            <div className="pt-2 border-t border-gray-100 mt-2">
-              {user ? (
-                <div>
-                  <div className="flex items-center gap-2 px-3 py-2 mb-1">
-                    <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                      <span className="text-blue-600 text-xs font-bold">
-                        {user.full_name.charAt(0).toUpperCase()}
-                      </span>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">{user.full_name}</p>
-                      <p className="text-xs text-gray-400 capitalize">{user.role}</p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={handleLogout}
-                    className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium text-red-500 hover:bg-red-50 transition-colors"
-                  >
-                    <LogOut size={16} />
-                    Logout
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <Link href="/auth/login" onClick={closeMenu} className="block px-3 py-2.5 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
-                    Login
-                  </Link>
-                  <Link href="/auth/register" onClick={closeMenu} className="block px-3 py-2.5 rounded-lg text-sm font-semibold bg-blue-600 text-white text-center hover:bg-blue-700 transition-colors">
-                    Get Started Free
-                  </Link>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+        <div className="flex items-center gap-1 md:hidden">
+          {user && <NotificationBell />}
+          <button
+            type="button"
+            onClick={() => setMenuOpen(!menuOpen)}
+            className="rounded-lg p-2.5 text-slate-700 hover:bg-slate-50"
+            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={menuOpen}
+            aria-controls="mobile-nav-menu"
+          >
+            {menuOpen ? <X size={22} aria-hidden="true" /> : <Menu size={22} aria-hidden="true" />}
+          </button>
+        </div>
       </div>
+
+      {menuOpen && (
+        <div id="mobile-nav-menu" className="border-t border-slate-200 bg-white px-3 py-3 md:hidden">
+          <div className="space-y-1">
+            {showBrowseRooms && navLink('/properties', 'Browse rooms', isActive('/properties'), true)}
+            {!user && navLink('/#how-it-works', 'How it works', false, true)}
+            {!user && navLink('/#for-landlords', 'For landlords', false, true)}
+            {user && navLink(dashboardPath, 'Dashboard', router.pathname.includes('/dashboard'), true)}
+            {roleLinks.map((link) => navLink(link.href, link.label, router.asPath.includes(link.href.split('#')[0]), true))}
+          </div>
+
+          {user ? (
+            <div className="mt-3 border-t border-slate-100 pt-3">
+              <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Signed in as</p>
+              <p className="mb-3 px-3 text-sm font-medium text-slate-900">{user.full_name}</p>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="flex w-full items-center gap-2 rounded-xl px-3 py-3 text-left text-base font-medium text-red-600 hover:bg-red-50"
+              >
+                <LogOut size={16} aria-hidden="true" />
+                Sign out
+              </button>
+            </div>
+          ) : (
+            <div className="mt-3 grid grid-cols-2 gap-3 border-t border-slate-100 pt-3">
+              <Link href="/auth/login" onClick={closeMenu} className="btn-secondary w-full">Sign in</Link>
+              <Link href="/auth/register" onClick={closeMenu} className="btn-primary w-full">Create account</Link>
+            </div>
+          )}
+        </div>
+      )}
     </nav>
   );
 }

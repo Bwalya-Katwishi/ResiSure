@@ -23,7 +23,9 @@ const BookingModel = {
         u.phone AS student_phone,
         p.title AS property_title,
         p.address AS property_address,
-        p.area AS property_area
+        p.area AS property_area,
+        p.latitude AS property_latitude,
+        p.longitude AS property_longitude
        FROM bookings b
        JOIN users u ON b.student_id = u.id
        JOIN properties p ON b.property_id = p.id
@@ -113,13 +115,61 @@ const BookingModel = {
     );
   },
 
-  async createEscrowTransaction({ booking_id, type, amount, status, reference }) {
+  async createEscrowTransaction({
+    booking_id,
+    type,
+    amount,
+    status,
+    reference,
+    payment_provider = null,
+    payer_phone = null,
+  }) {
     await pool.query(
       `INSERT INTO escrow_transactions 
-        (booking_id, type, amount, status, reference)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [booking_id, type, amount, status, reference]
+        (booking_id, type, amount, status, reference, payment_provider, payer_phone)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [booking_id, type, amount, status, reference, payment_provider, payer_phone]
     );
+  },
+
+  async findTransactionsForStudent(student_id) {
+    const result = await pool.query(
+      `SELECT t.id, t.booking_id, t.type, t.amount, t.status, t.reference,
+              t.payment_provider, t.created_at, b.status AS booking_status,
+              p.title AS property_title
+       FROM escrow_transactions t
+       JOIN bookings b ON b.id = t.booking_id
+       JOIN properties p ON p.id = b.property_id
+       WHERE b.student_id = $1
+       ORDER BY t.created_at DESC`,
+      [student_id]
+    );
+    return result.rows;
+  },
+
+  async findReleasedForLandlord(landlord_id) {
+    const result = await pool.query(
+      `SELECT t.id, t.booking_id, t.type, t.amount, t.status, t.reference, t.created_at,
+              p.title AS property_title, b.status AS booking_status
+       FROM escrow_transactions t
+       JOIN bookings b ON b.id = t.booking_id
+       JOIN properties p ON p.id = b.property_id
+       WHERE p.landlord_id = $1 AND t.type = 'release' AND t.status = 'completed'
+       ORDER BY t.created_at DESC`,
+      [landlord_id]
+    );
+    return result.rows;
+  },
+
+  async findTransactionsByBookingId(booking_id) {
+    const result = await pool.query(
+      `SELECT id, type, amount, status, reference, payment_provider, payer_phone, created_at
+       FROM escrow_transactions
+       WHERE booking_id = $1
+       ORDER BY created_at ASC`,
+      [booking_id]
+    );
+    return result.rows;
   },
 
 };

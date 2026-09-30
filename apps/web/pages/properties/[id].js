@@ -1,12 +1,177 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import Layout from '../../components/layout/Layout';
 import Badge from '../../components/ui/Badge';
+import VerifiedBadge from '../../components/ui/VerifiedBadge';
+import EmptyState from '../../components/ui/EmptyState';
+import { Skeleton } from '../../components/ui/Skeleton';
 import { useAuth } from '../../context/AuthContext';
 import { getProperty, createBooking } from '../../lib/api';
 import toast from 'react-hot-toast';
-import { MapPin, BedDouble, Shield, Phone, CheckCircle, ArrowLeft } from 'lucide-react';
+import { getActionableError, getApiErrorMessage } from '../../lib/userFeedback';
+import StatusBanner from '../../components/ui/StatusBanner';
+import { MapPin, BedDouble, Shield, CheckCircle, ArrowLeft, Pencil, BookOpen, LayoutDashboard } from 'lucide-react';
+import FavoriteButton from '../../components/properties/FavoriteButton';
 import Link from 'next/link';
+import { getImageUrl } from '../../lib/images';
+import { formatKwacha } from '../../lib/bookingStatus';
+import { accommodationLabel, accommodationAvailabilityText } from '../../lib/propertyAccommodation';
+import { useRefetchOnFocus } from '../../lib/useRefetchOnFocus';
+import AccountDetailPanel from '../../components/dashboard/admin/AccountDetailPanel';
+
+function LandlordOwnerPanel({ property }) {
+  const listingBookings = `/dashboard/landlord#landlord-booking-requests`;
+
+  return (
+    <>
+      <div className="mb-5">
+        <p className="text-3xl font-bold text-slate-900">
+          {formatKwacha(property.rent_per_month)}
+          <span className="ml-1 text-sm font-medium text-slate-500">/ month</span>
+        </p>
+      </div>
+
+      <StatusBanner type="info" title="Your listing" className="mb-4">
+        You are viewing your own property. Students book from the public listing page — manage it from your dashboard.
+      </StatusBanner>
+
+      <div className="mb-5 flex items-center gap-2">
+        <CheckCircle size={16} className={property.available_rooms > 0 ? 'text-green-600' : 'text-red-500'} />
+        <span className="text-sm text-slate-600">
+          {property.available_rooms > 0
+            ? `${property.available_rooms} of ${property.total_rooms} room(s) available`
+            : 'Fully booked'}
+        </span>
+      </div>
+
+      <div className="space-y-2">
+        <Link
+          href={`/dashboard/landlord?edit=${property.id}#landlord-listing-form`}
+          className="btn-primary w-full py-3"
+        >
+          <Pencil size={16} />
+          Edit listing
+        </Link>
+        <Link href={listingBookings} className="btn-secondary w-full py-3">
+          <BookOpen size={16} />
+          View bookings
+        </Link>
+        <Link href="/dashboard/landlord#landlord-listings" className="btn-secondary w-full py-3">
+          <LayoutDashboard size={16} />
+          Back to my listings
+        </Link>
+      </div>
+    </>
+  );
+}
+
+function BookingForm({
+  property,
+  isVerified,
+  landlordVerified,
+  user,
+  moveInDate,
+  setMoveInDate,
+  booking,
+  handleBook,
+  bookingBlock,
+}) {
+  return (
+    <>
+      <div className="mb-5">
+        <p className="text-3xl font-bold text-slate-900">
+          {formatKwacha(property.rent_per_month)}
+          <span className="ml-1 text-sm font-medium text-slate-500">/ month</span>
+        </p>
+      </div>
+
+      <div className="mb-5 flex items-start gap-2 rounded-xl border border-blue-100 bg-blue-50 p-3">
+        <Shield size={16} className="mt-0.5 flex-shrink-0 text-blue-700" />
+        <div>
+          <p className="text-sm font-semibold text-blue-900">Payment protection</p>
+          <p className="text-xs leading-relaxed text-blue-700">
+            Your payment is protected until you confirm your move-in.
+          </p>
+        </div>
+      </div>
+
+      <div className="mb-5 flex items-center gap-2">
+        <CheckCircle size={16} className={property.available_rooms > 0 ? 'text-green-600' : 'text-red-500'} />
+        <span className="text-sm text-slate-600">
+          {property.available_rooms > 0
+            ? `${property.available_rooms} of ${property.total_rooms} room(s) available`
+            : 'No rooms available'}
+        </span>
+      </div>
+
+      {!isVerified && (
+        <StatusBanner type="warning" title="Unverified listing" className="mb-4">
+          This listing has not yet been reviewed by ResiSure. You can still book if the landlord is verified.
+        </StatusBanner>
+      )}
+
+      {!landlordVerified && (
+        <StatusBanner
+          type="warning"
+          title="Landlord verification pending"
+          className="mb-4"
+          actionHref="/properties?verified=true"
+          actionLabel="Browse verified landlords"
+        >
+          This listing is visible, but the landlord account is not verified yet. For your safety, booking is disabled until admin approval.
+        </StatusBanner>
+      )}
+
+      {bookingBlock && (
+        <StatusBanner
+          type="warning"
+          title={bookingBlock.title}
+          className="mb-4"
+          actionHref={bookingBlock.actionHref}
+          actionLabel={bookingBlock.actionLabel}
+        >
+          {bookingBlock.message}
+        </StatusBanner>
+      )}
+
+      {property.verification_status !== 'rejected' && property.verification_status !== 'suspended' && landlordVerified && property.available_rooms > 0 && !bookingBlock && (
+        <>
+          <div className="mb-4">
+            <label className="label" htmlFor="move-in-date">Move-in date</label>
+            <input
+              id="move-in-date"
+              type="date"
+              value={moveInDate}
+              onChange={(e) => setMoveInDate(e.target.value)}
+              min={new Date().toISOString().split('T')[0]}
+              className="input"
+              required
+              aria-required="true"
+            />
+          </div>
+
+          <button
+            onClick={handleBook}
+            disabled={booking}
+            className="btn-primary w-full py-3"
+          >
+            <Shield size={16} />
+            {booking ? 'Submitting request…' : 'Book this room'}
+          </button>
+
+          {!user && (
+            <p className="mt-3 text-center text-xs text-slate-500">
+              <Link href="/auth/login" className="font-medium text-blue-700 hover:underline">
+                Sign in
+              </Link>
+              {' '}to complete your booking
+            </p>
+          )}
+        </>
+      )}
+    </>
+  );
+}
 
 export default function PropertyDetailPage() {
   const { user } = useAuth();
@@ -16,24 +181,37 @@ export default function PropertyDetailPage() {
   const [loading, setLoading] = useState(true);
   const [booking, setBooking] = useState(false);
   const [moveInDate, setMoveInDate] = useState('');
+  const [activeImage, setActiveImage] = useState(0);
+  const [showMobileBooking, setShowMobileBooking] = useState(false);
+  const bookingRef = useRef(null);
 
-  useEffect(() => {
-    if (id) {
-      getProperty(id)
-        .then(res => setProperty(res.data.data.property))
-        .catch(() => toast.error('Property not found'))
-        .finally(() => setLoading(false));
+  const loadProperty = useCallback(async ({ silent = false } = {}) => {
+    if (!id) return;
+    if (!silent) setLoading(true);
+    try {
+      const res = await getProperty(id);
+      setProperty(res.data.data.property);
+    } catch {
+      if (!silent) toast.error('We could not find that room.');
+    } finally {
+      if (!silent) setLoading(false);
     }
   }, [id]);
 
+  useEffect(() => {
+    if (id) loadProperty();
+  }, [id, loadProperty]);
+
+  useRefetchOnFocus(() => loadProperty({ silent: true }), Boolean(id));
+
   const handleBook = async () => {
     if (!user) {
-      toast.error('Please login to book this property');
+      toast.error('Please sign in to book this room');
       router.push('/auth/login');
       return;
     }
     if (user.role !== 'student') {
-      toast.error('Only students can book properties');
+      toast.error('Only students can book rooms');
       return;
     }
     if (!moveInDate) {
@@ -46,10 +224,11 @@ export default function PropertyDetailPage() {
         property_id: id,
         move_in_date: moveInDate,
       });
-      toast.success('Booking request submitted successfully!');
-      router.push(`/bookings/${res.data.data.booking.id}`);
+      toast.success(res.data.message || 'Booking request submitted successfully. We will notify you when the landlord responds.');
+      router.replace(`/bookings/${res.data.data.booking.id}`);
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Booking failed');
+      const info = getActionableError(err, getApiErrorMessage(err, 'We could not submit your booking. Please try again.'));
+      toast.error(info.message);
     } finally {
       setBooking(false);
     }
@@ -58,8 +237,14 @@ export default function PropertyDetailPage() {
   if (loading) {
     return (
       <Layout>
-        <div className="flex items-center justify-center py-20">
-          <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+        <Skeleton className="mb-6 h-4 w-32" />
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+          <div className="lg:col-span-2 space-y-4">
+            <Skeleton className="h-80 w-full rounded-2xl" />
+            <Skeleton className="h-8 w-2/3" />
+            <Skeleton className="h-40 w-full" />
+          </div>
+          <Skeleton className="h-80 w-full" />
         </div>
       </Layout>
     );
@@ -68,187 +253,208 @@ export default function PropertyDetailPage() {
   if (!property) {
     return (
       <Layout>
-        <div className="text-center py-20">
-          <p className="text-gray-500">Property not found</p>
-          <Link href="/properties" className="text-blue-600 hover:underline text-sm mt-2 inline-block">
-            Back to listings
-          </Link>
-        </div>
+        <EmptyState
+          icon={BedDouble}
+          title="Room not found"
+          body="This listing may have been removed or is no longer available."
+          actionHref="/properties"
+          actionLabel="Browse rooms"
+        />
       </Layout>
     );
   }
 
   const isVerified = property.verification_status === 'verified';
+  const landlordVerified = property.landlord_verification_status === 'verified';
+  const amenities = Array.isArray(property.amenities) ? property.amenities : [];
+  const images = Array.isArray(property.images) ? property.images : [];
+
+  let bookingBlock = null;
+  if (user?.role === 'student' && user.verification_status !== 'verified') {
+    bookingBlock = {
+      title: 'Student verification required',
+      message: 'Upload your NRC and university confirmation slip on your dashboard. Once an admin approves your account, you can book rooms here.',
+      actionHref: '/dashboard/student',
+      actionLabel: 'Complete verification',
+    };
+  }
+
+  const isOwner = Boolean(property.is_owner);
+
+  const formProps = {
+    property,
+    isVerified,
+    landlordVerified,
+    user,
+    moveInDate,
+    setMoveInDate,
+    booking,
+    handleBook,
+    bookingBlock,
+  };
 
   return (
     <Layout>
-      {/* Back */}
-      <Link href="/properties" className="flex items-center gap-2 text-gray-500 hover:text-gray-700 text-sm mb-6 transition-colors">
+      <Link href="/properties" className="mb-6 inline-flex items-center gap-2 text-sm text-slate-500 hover:text-slate-800">
         <ArrowLeft size={16} />
         Back to listings
       </Link>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-
-        {/* Main content */}
+      <div className="grid grid-cols-1 gap-8 pb-28 lg:grid-cols-3 lg:pb-0">
         <div className="lg:col-span-2">
+          <div className="mb-6">
+            {images.length > 0 ? (
+              <div>
+                <div className="aspect-[16/10] overflow-hidden rounded-2xl bg-slate-100">
+                  <img
+                    src={getImageUrl(images[activeImage] || images[0])}
+                    alt={property.title}
+                    className="h-full w-full object-cover"
+                  />
+                </div>
+                {images.length > 1 && (
+                  <div className="mt-2 grid grid-cols-4 gap-2 sm:grid-cols-5">
+                    {images.slice(0, 5).map((img, i) => (
+                      <button
+                        key={img.id || i}
+                        type="button"
+                        onClick={() => setActiveImage(i)}
+                        aria-label={`View photo ${i + 1} of ${Math.min(images.length, 5)}`}
+                        aria-current={activeImage === i ? 'true' : undefined}
+                        className={`overflow-hidden rounded-xl ${activeImage === i ? 'ring-2 ring-blue-600' : ''}`}
+                      >
+                        <img src={getImageUrl(img)} alt={`${property.title} photo ${i + 1}`} className="h-16 w-full object-cover sm:h-20" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex aspect-[16/10] items-center justify-center rounded-2xl bg-slate-100">
+                <BedDouble size={48} className="text-slate-300" />
+              </div>
+            )}
+          </div>
 
-          {/* Image gallery*/}
-         {/* Image gallery */}
-<div className="mb-6">
-  {Array.isArray(property.images) && property.images.length > 0 ? (
-    <div className="grid grid-cols-1 gap-2">
-      <div className="h-64 rounded-2xl overflow-hidden">
-        <img
-          src={property.images[0]}
-          alt={property.title}
-          className="w-full h-full object-cover"
-        />
-      </div>
-      {property.images.length > 1 && (
-        <div className={`grid gap-2 ${property.images.length === 2 ? 'grid-cols-1' : 'grid-cols-2'}`}>
-          {property.images.slice(1, 3).map((img, i) => (
-            <div key={i} className="h-32 rounded-xl overflow-hidden">
-              <img src={img} alt="" className="w-full h-full object-cover" />
+          <div className="mb-4 flex items-start justify-between gap-4">
+            <div>
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                {isVerified ? <VerifiedBadge /> : <Badge type="pending">Unverified</Badge>}
+              </div>
+              <h1 className="text-2xl font-bold text-slate-900 md:text-3xl">{property.title}</h1>
             </div>
-          ))}
-        </div>
-      )}
-    </div>
-  ) : (
-    <div className="h-64 bg-gradient-to-br from-blue-100 to-blue-200 rounded-2xl flex items-center justify-center">
-      <BedDouble size={60} className="text-blue-400" />
-    </div>
-  )}
-</div>
-
-          {/* Title and badges */}
-          <div className="flex items-start justify-between gap-4 mb-4">
-            <h1 className="text-2xl font-bold text-gray-900">{property.title}</h1>
-            <Badge type={isVerified ? 'verified' : 'pending'}>
-              {isVerified ? '✓ Verified Landlord' : 'Pending Verification'}
-            </Badge>
+            {!isOwner && (
+              <FavoriteButton
+                propertyId={property.id}
+                isFavorite={property.is_favorite}
+                onChange={(_, saved) => setProperty({ ...property, is_favorite: saved })}
+                className="border-slate-200"
+              />
+            )}
           </div>
 
-          {/* Location */}
-          <div className="flex items-center gap-2 text-gray-500 mb-6">
-            <MapPin size={16} />
-            <span>{property.address}</span>
+          <div className="mb-6 flex items-start gap-2 text-slate-500">
+            <MapPin size={16} className="mt-0.5 shrink-0" />
+            <span className="break-words text-sm sm:text-base">{property.address}{property.area ? ` · ${property.area}, Lusaka` : ''}</span>
           </div>
 
-          {/* Description */}
           {property.description && (
-            <div className="bg-white rounded-xl border border-gray-100 p-5 mb-6">
-              <h2 className="font-semibold text-gray-900 mb-3">About this property</h2>
-              <p className="text-gray-600 text-sm leading-relaxed">{property.description}</p>
+            <div className="card mb-6 p-5">
+              <h2 className="mb-3 font-semibold text-slate-900">About this room</h2>
+              <p className="text-sm leading-relaxed text-slate-600">{property.description}</p>
             </div>
           )}
 
-          {/* Details */}
-          <div className="bg-white rounded-xl border border-gray-100 p-5 mb-6">
-            <h2 className="font-semibold text-gray-900 mb-4">Property Details</h2>
+          <div className="card mb-6 p-5">
+            <h2 className="mb-4 font-semibold text-slate-900">Details</h2>
             <div className="grid grid-cols-2 gap-4">
               {[
-                { label: 'Area', value: property.area },
-                { label: 'Available Rooms', value: `${property.available_rooms} of ${property.total_rooms}` },
-                { label: 'Monthly Rent', value: `ZMW ${Number(property.rent_per_month).toLocaleString()}` },
-                { label: 'Status', value: property.status },
-              ].map((item, i) => (
-                <div key={i}>
-                  <p className="text-xs text-gray-400 mb-1">{item.label}</p>
-                  <p className="text-sm font-medium text-gray-900">{item.value}</p>
+                { label: 'Area', value: property.area || 'Lusaka' },
+                { label: 'Type', value: property.property_type || 'room' },
+                { label: 'Suitable for', value: accommodationLabel(property.accommodation_gender) },
+                { label: 'Availability', value: accommodationAvailabilityText(property) },
+                { label: 'Monthly rent', value: `${formatKwacha(property.rent_per_month)} / month` },
+              ].map((item) => (
+                <div key={item.label}>
+                  <p className="mb-1 text-xs text-slate-400">{item.label}</p>
+                  <p className="text-sm font-medium capitalize text-slate-900">{item.value}</p>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Landlord info */}
-          <div className="bg-white rounded-xl border border-gray-100 p-5">
-            <h2 className="font-semibold text-gray-900 mb-4">Landlord Information</h2>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium text-gray-900">{property.landlord_name}</p>
-                <div className="flex items-center gap-1 text-gray-500 text-sm mt-1">
-                  <Phone size={12} />
-                  <span>{property.landlord_phone || 'Not provided'}</span>
-                </div>
+          {amenities.length > 0 && (
+            <div className="card mb-6 p-5">
+              <h2 className="mb-3 font-semibold text-slate-900">Amenities</h2>
+              <div className="flex flex-wrap gap-2">
+                {amenities.map((item) => (
+                  <span key={item} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs capitalize text-slate-700">
+                    {item}
+                  </span>
+                ))}
               </div>
-              <Badge type={isVerified ? 'verified' : 'pending'}>
-                {property.verification_status}
+            </div>
+          )}
+
+          <div className="card mb-6 p-5">
+            <h2 className="mb-3 font-semibold text-slate-900">Location</h2>
+            <p className="flex items-start gap-2 text-sm text-slate-600">
+              <MapPin size={16} className="mt-0.5 flex-shrink-0 text-blue-600" />
+              {property.address}
+              {property.area ? `, ${property.area}, Lusaka` : ''}
+            </p>
+          </div>
+
+          <div className="card p-5">
+            <h2 className="mb-4 font-semibold text-slate-900">Landlord</h2>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="font-medium text-slate-900">{property.landlord_name}</p>
+                <p className="mt-1 text-xs text-slate-400">Contact details are shared after a booking is accepted.</p>
+              </div>
+              <Badge type={landlordVerified ? 'verified' : 'pending'}>
+                {landlordVerified ? 'Verified landlord' : 'Under review'}
               </Badge>
             </div>
           </div>
         </div>
 
-        {/* Booking sidebar */}
-        <div>
-          <div className="bg-white rounded-xl border border-gray-100 p-6 sticky top-24">
-
-            {/* Price */}
-            <div className="mb-6">
-              <p className="text-3xl font-bold text-blue-600">
-                ZMW {Number(property.rent_per_month).toLocaleString()}
-              </p>
-              <p className="text-gray-400 text-sm">per month</p>
-            </div>
-
-            {/* Escrow badge */}
-            <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-6 flex items-center gap-2">
-              <Shield size={16} className="text-green-600" />
-              <div>
-                <p className="text-xs font-semibold text-green-800">Escrow Protected</p>
-                <p className="text-xs text-green-600">Payment held until you confirm move-in</p>
-              </div>
-            </div>
-
-            {/* Availability */}
-            <div className="flex items-center gap-2 mb-6">
-              <CheckCircle size={16} className={property.available_rooms > 0 ? 'text-green-500' : 'text-red-400'} />
-              <span className="text-sm text-gray-600">
-                {property.available_rooms > 0
-                  ? `${property.available_rooms} room(s) available`
-                  : 'No rooms available'}
-              </span>
-            </div>
-
-            {/* Move-in date */}
-            {property.available_rooms > 0 && (
-              <>
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Select Move-in Date
-                  </label>
-                  <input
-                    type="date"
-                    value={moveInDate}
-                    onChange={e => setMoveInDate(e.target.value)}
-                    min={new Date().toISOString().split('T')[0]}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                <button
-                  onClick={handleBook}
-                  disabled={booking}
-                  className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  <Shield size={16} />
-                  {booking ? 'Submitting...' : 'Book with Escrow Protection'}
-                </button>
-
-                {!user && (
-                  <p className="text-center text-xs text-gray-400 mt-3">
-                    <Link href="/auth/login" className="text-blue-600 hover:underline">
-                      Login
-                    </Link>{' '}
-                    to book this property
-                  </p>
-                )}
-              </>
-            )}
+        <div className="hidden lg:block">
+          <div ref={bookingRef} className="card sticky top-24 p-6">
+            {isOwner ? <LandlordOwnerPanel property={property} /> : <BookingForm {...formProps} />}
           </div>
         </div>
       </div>
+
+      <div className="mobile-action-bar p-3 lg:hidden">
+        <div className="mx-auto flex max-w-6xl items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-bold text-slate-900">{formatKwacha(property.rent_per_month)} / month</p>
+            <p className="truncate text-xs text-slate-500">{isVerified ? 'Payment protected' : 'Unverified listing'}</p>
+          </div>
+          {isOwner ? (
+            <Link href={`/dashboard/landlord?edit=${property.id}#landlord-listing-form`} className="btn-primary shrink-0">
+              Manage listing
+            </Link>
+          ) : property.verification_status !== 'rejected' && property.verification_status !== 'suspended' && landlordVerified && property.available_rooms > 0 && !bookingBlock ? (
+            <button
+              type="button"
+              onClick={() => setShowMobileBooking(true)}
+              className="btn-primary shrink-0"
+            >
+              Book this room
+            </button>
+          ) : (
+            <Link href="/properties" className="btn-secondary shrink-0">Browse rooms</Link>
+          )}
+        </div>
+      </div>
+
+      {showMobileBooking && !isOwner && (
+        <AccountDetailPanel title="Book this room" onClose={() => setShowMobileBooking(false)}>
+          <BookingForm {...formProps} />
+        </AccountDetailPanel>
+      )}
     </Layout>
   );
 }

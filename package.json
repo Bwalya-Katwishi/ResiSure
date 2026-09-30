@@ -5,14 +5,31 @@
   "description": "ResiSure — Escrow-enabled student accommodation platform",
   "workspaces": [
     "apps/api",
-    "apps/web"
+    "apps/web",
+    "apps/mobile",
+    "packages/shared"
   ],
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "pm2": "^6.0.14"
+  },
   "scripts": {
     "dev:api": "npm run dev --workspace=apps/api",
     "dev:web": "npm run dev --workspace=apps/web",
+    "dev:mobile": "npm run start --workspace=apps/mobile",
     "dev": "npm run dev:api & npm run dev:web",
     "migrate": "npm run migrate --workspace=apps/api",
     "seed": "npm run seed --workspace=apps/api",
-    "install:all": "npm install && npm install --workspace=apps/api && npm install --workspace=apps/web"
+    "test": "npm test --workspace=apps/api",
+    "build:web": "npm run build --workspace=apps/web",
+    "start:api": "npm run start --workspace=apps/api",
+    "start:web": "npm run start --workspace=apps/web",
+    "production:setup": "powershell -ExecutionPolicy Bypass -File scripts/setup-production.ps1",
+    "production:start": "powershell -ExecutionPolicy Bypass -File scripts/start-production.ps1",
+    "production:stop": "powershell -ExecutionPolicy Bypass -File scripts/stop-production.ps1",
+    "production:status": "powershell -Command \"try { (Invoke-RestMethod http://localhost:5000/health | ConvertTo-Json -Compress); (Invoke-RestMethod http://localhost:5000/ready | ConvertTo-Json -Compress); (Invoke-WebRequest http://localhost:3000 -UseBasicParsing).StatusCode } catch { Write-Host 'One or both services are not responding.' }\"",
+    "install:all": "npm install && npm install --workspace=apps/api && npm install --workspace=apps/web && npm install --workspace=apps/mobile"
   }
 }

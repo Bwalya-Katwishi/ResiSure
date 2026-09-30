@@ -1,4 +1,5 @@
 const BookingService = require('../services/booking.service');
+const { sendError } = require('../utils/httpError');
 
 const BookingController = {
 
@@ -7,13 +8,11 @@ const BookingController = {
       const booking = await BookingService.createBooking(req.user.id, req.body);
       return res.status(201).json({
         success: true,
-        message: 'Booking request submitted successfully',
+        message: 'Booking request submitted successfully. We will notify you when the landlord responds.',
         data: { booking }
       });
     } catch (err) {
-      return res.status(err.status || 500).json({
-        success: false, message: err.message || 'Failed to create booking'
-      });
+      return sendError(res, err, 'Failed to create booking');
     }
   },
 
@@ -22,13 +21,11 @@ const BookingController = {
       const booking = await BookingService.acceptBooking(req.params.id, req.user.id);
       return res.status(200).json({
         success: true,
-        message: 'Booking accepted — student can now pay',
+        message: 'Booking request accepted. The student has been notified.',
         data: { booking }
       });
     } catch (err) {
-      return res.status(err.status || 500).json({
-        success: false, message: err.message || 'Failed to accept booking'
-      });
+      return sendError(res, err, 'Failed to accept booking');
     }
   },
 
@@ -37,43 +34,71 @@ const BookingController = {
       const booking = await BookingService.rejectBooking(req.params.id, req.user.id);
       return res.status(200).json({
         success: true,
-        message: 'Booking rejected',
+        message: 'Booking request declined. The student has been notified.',
         data: { booking }
       });
     } catch (err) {
-      return res.status(err.status || 500).json({
-        success: false, message: err.message || 'Failed to reject booking'
-      });
+      return sendError(res, err, 'Failed to reject booking');
     }
   },
 
   async pay(req, res) {
     try {
-      const booking = await BookingService.payForBooking(req.params.id, req.user.id);
+      const booking = await BookingService.payForBooking(req.params.id, req.user.id, {
+        phone: req.body.phone,
+        outcome: req.body.outcome,
+        provider: req.body.provider,
+      });
       return res.status(200).json({
         success: true,
-        message: 'Payment captured into escrow successfully',
-        data: { booking }
+        message: booking.payment?.message || 'Escrow-style protected payment captured successfully',
+        data: { booking, payment: booking.payment || null }
       });
     } catch (err) {
-      return res.status(err.status || 500).json({
-        success: false, message: err.message || 'Failed to process payment'
+      return sendError(res, err, 'Failed to process payment');
+    }
+  },
+
+  async completePendingPayment(req, res) {
+    try {
+      const booking = await BookingService.completePendingPayment(req.params.id, req.user.id, {
+        outcome: req.body.outcome || 'success',
       });
+      return res.status(200).json({
+        success: true,
+        message: booking.payment?.message || 'Pending payment completed',
+        data: { booking, payment: booking.payment || null },
+      });
+    } catch (err) {
+      return sendError(res, err, 'Failed to complete payment');
+    }
+  },
+
+  async cancel(req, res) {
+    try {
+      const booking = await BookingService.cancelBooking(req.params.id, req.user.id);
+      return res.status(200).json({
+        success: true,
+        message: 'Booking cancelled',
+        data: { booking },
+      });
+    } catch (err) {
+      return sendError(res, err, 'Failed to cancel booking');
     }
   },
 
   async confirmMoveIn(req, res) {
     try {
-      const booking = await BookingService.confirmMoveIn(req.params.id, req.user.id);
+      const booking = await BookingService.confirmMoveIn(req.params.id, req.user.id, {
+        move_in_code: req.body?.move_in_code,
+      });
       return res.status(200).json({
         success: true,
-        message: 'Move-in confirmed — funds released to landlord',
+        message: 'Move-in confirmed successfully.',
         data: { booking }
       });
     } catch (err) {
-      return res.status(err.status || 500).json({
-        success: false, message: err.message || 'Failed to confirm move-in'
-      });
+      return sendError(res, err, 'Failed to confirm move-in');
     }
   },
 
@@ -86,13 +111,11 @@ const BookingController = {
       );
       return res.status(200).json({
         success: true,
-        message: 'Dispute raised — funds frozen pending admin review',
+        message: 'Your dispute has been submitted and is under review.',
         data: { booking }
       });
     } catch (err) {
-      return res.status(err.status || 500).json({
-        success: false, message: err.message || 'Failed to raise dispute'
-      });
+      return sendError(res, err, 'Failed to raise dispute');
     }
   },
 
@@ -109,9 +132,33 @@ const BookingController = {
         data: { booking }
       });
     } catch (err) {
-      return res.status(err.status || 500).json({
-        success: false, message: err.message || 'Failed to resolve dispute'
+      return sendError(res, err, 'Failed to resolve dispute');
+    }
+  },
+
+  async myTransactions(req, res) {
+    try {
+      const transactions = await BookingService.getStudentTransactions(req.user.id);
+      return res.status(200).json({
+        success: true,
+        count: transactions.length,
+        data: { transactions },
       });
+    } catch (err) {
+      return sendError(res, err, 'Failed to fetch transactions');
+    }
+  },
+
+  async landlordReleased(req, res) {
+    try {
+      const transactions = await BookingService.getLandlordReleased(req.user.id);
+      return res.status(200).json({
+        success: true,
+        count: transactions.length,
+        data: { transactions },
+      });
+    } catch (err) {
+      return sendError(res, err, 'Failed to fetch released funds');
     }
   },
 
@@ -124,9 +171,7 @@ const BookingController = {
         data: { bookings }
       });
     } catch (err) {
-      return res.status(err.status || 500).json({
-        success: false, message: err.message || 'Failed to fetch bookings'
-      });
+      return sendError(res, err, 'Failed to fetch bookings');
     }
   },
 
@@ -139,9 +184,7 @@ const BookingController = {
         data: { bookings }
       });
     } catch (err) {
-      return res.status(err.status || 500).json({
-        success: false, message: err.message || 'Failed to fetch bookings'
-      });
+      return sendError(res, err, 'Failed to fetch bookings');
     }
   },
 
@@ -153,9 +196,7 @@ const BookingController = {
         data: { booking }
       });
     } catch (err) {
-      return res.status(err.status || 500).json({
-        success: false, message: err.message || 'Failed to fetch booking'
-      });
+      return sendError(res, err, 'Failed to fetch booking');
     }
   },
 

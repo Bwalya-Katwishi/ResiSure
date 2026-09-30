@@ -1,4 +1,6 @@
 const PropertyService = require('../services/property.service');
+const TrustProfileService = require('../services/trustProfile.service');
+const { sendError } = require('../utils/httpError');
 
 const PropertyController = {
 
@@ -7,14 +9,11 @@ const PropertyController = {
       const property = await PropertyService.createProperty(req.user.id, req.body);
       return res.status(201).json({
         success: true,
-        message: 'Property listed successfully',
+        message: 'Listing published successfully. It is now visible to students and awaiting listing verification.',
         data: { property }
       });
     } catch (err) {
-      return res.status(err.status || 500).json({
-        success: false,
-        message: err.message || 'Failed to create property'
-      });
+      return sendError(res, err, 'Failed to create property');
     }
   },
 
@@ -26,33 +25,45 @@ const PropertyController = {
         area: req.query.area,
         verified: req.query.verified,
         available: req.query.available,
+        property_type: req.query.property_type,
+        amenities: req.query.amenities,
+        sort: req.query.sort,
+        page: req.query.page,
+        limit: req.query.limit,
+        q: req.query.q,
+        for_gender: req.query.for_gender,
+        user_id: req.user?.id,
       };
-      const properties = await PropertyService.getAllProperties(filters);
+      const { properties, pagination } = await PropertyService.getAllProperties(filters);
       return res.status(200).json({
         success: true,
         count: properties.length,
+        pagination,
         data: { properties }
       });
     } catch (err) {
-      return res.status(err.status || 500).json({
-        success: false,
-        message: err.message || 'Failed to fetch properties'
-      });
+      return sendError(res, err, 'Failed to fetch properties');
+    }
+  },
+
+  async getTrustProfile(req, res) {
+    try {
+      const trustProfile = await TrustProfileService.getPropertyTrustProfile(req.params.id);
+      return res.status(200).json({ success: true, data: { trustProfile } });
+    } catch (err) {
+      return sendError(res, err, 'Failed to fetch trust profile');
     }
   },
 
   async getOne(req, res) {
     try {
-      const property = await PropertyService.getPropertyById(req.params.id);
+      const property = await PropertyService.getPropertyById(req.params.id, req.user?.id);
       return res.status(200).json({
         success: true,
         data: { property }
       });
     } catch (err) {
-      return res.status(err.status || 500).json({
-        success: false,
-        message: err.message || 'Failed to fetch property'
-      });
+      return sendError(res, err, 'Failed to fetch property');
     }
   },
 
@@ -65,10 +76,7 @@ const PropertyController = {
         data: { properties }
       });
     } catch (err) {
-      return res.status(err.status || 500).json({
-        success: false,
-        message: err.message || 'Failed to fetch your properties'
-      });
+      return sendError(res, err, 'Failed to fetch your properties');
     }
   },
 
@@ -81,10 +89,7 @@ const PropertyController = {
         data: { property }
       });
     } catch (err) {
-      return res.status(err.status || 500).json({
-        success: false,
-        message: err.message || 'Failed to update property'
-      });
+      return sendError(res, err, 'Failed to update property');
     }
   },
 
@@ -96,85 +101,50 @@ const PropertyController = {
         message: 'Property removed successfully'
       });
     } catch (err) {
-      return res.status(err.status || 500).json({
-        success: false,
-        message: err.message || 'Failed to delete property'
-      });
+      return sendError(res, err, 'Failed to delete property');
     }
   },
-async uploadImages(req, res) {
+
+  async uploadImages(req, res) {
     try {
-      const { id } = req.params;
-      if (!req.files || req.files.length === 0) {
-        return res.status(400).json({ success: false, message: 'No images uploaded' });
-      }
-      const property = await PropertyService.getPropertyById(id);
-      const landlordProfile = await require('../models/property.model').getLandlordProfile(req.user.id);
-      if (!landlordProfile || property.landlord_id !== landlordProfile.id) {
-        return res.status(403).json({ success: false, message: 'You can only upload images to your own properties' });
-      }
-      const pool = require('../config/database');
-      const existingImages = await pool.query(
-        'SELECT COUNT(*) FROM property_images WHERE property_id = $1',
-        [id]
-      );
-      const currentCount = parseInt(existingImages.rows[0].count);
-      if (currentCount + req.files.length > 5) {
-        return res.status(400).json({
-          success: false,
-          message: `You can only have 5 images per property. You currently have ${currentCount}.`,
-        });
-      }
-      const insertPromises = req.files.map((file, index) =>
-        pool.query(
-          'INSERT INTO property_images (property_id, image_url, is_primary) VALUES ($1, $2, $3)',
-          [id, file.path, currentCount === 0 && index === 0]
-        )
-      );
-      await Promise.all(insertPromises);
-      const images = await pool.query(
-        'SELECT * FROM property_images WHERE property_id = $1 ORDER BY is_primary DESC',
-        [id]
+      const images = await PropertyService.uploadImages(
+        req.params.id,
+        req.user.id,
+        req.files,
+        req
       );
       return res.status(201).json({
         success: true,
         message: `${req.files.length} image(s) uploaded successfully`,
-        data: { images: images.rows },
+        data: { images },
       });
     } catch (err) {
-      return res.status(err.status || 500).json({
-        success: false,
-        message: err.message || 'Image upload failed',
+      return sendError(res, err, 'Image upload failed');
+    }
+  },
+
+  async submitForReview(req, res) {
+    try {
+      const property = await PropertyService.submitForReview(req.params.id, req.user.id);
+      return res.status(200).json({
+        success: true,
+        message: 'Listing submitted for verification',
+        data: { property },
       });
+    } catch (err) {
+      return sendError(res, err, 'Failed to submit listing');
     }
   },
 
   async deleteImage(req, res) {
     try {
-      const { id, imageId } = req.params;
-      const pool = require('../config/database');
-      const { cloudinary } = require('../config/cloudinary');
-      const image = await pool.query(
-        'SELECT * FROM property_images WHERE id = $1 AND property_id = $2',
-        [imageId, id]
-      );
-      if (!image.rows[0]) {
-        return res.status(404).json({ success: false, message: 'Image not found' });
-      }
-      // Extract public_id from cloudinary URL and delete from cloudinary
-      const imageUrl = image.rows[0].image_url;
-      const publicId = imageUrl.split('/').slice(-2).join('/').replace(/\.[^/.]+$/, '');
-      await cloudinary.uploader.destroy(publicId);
-      await pool.query('DELETE FROM property_images WHERE id = $1', [imageId]);
+      await PropertyService.deleteImage(req.params.id, req.params.imageId, req.user.id);
       return res.status(200).json({
         success: true,
         message: 'Image deleted successfully',
       });
     } catch (err) {
-      return res.status(err.status || 500).json({
-        success: false,
-        message: err.message || 'Image deletion failed',
-      });
+      return sendError(res, err, 'Image deletion failed');
     }
   },
 };

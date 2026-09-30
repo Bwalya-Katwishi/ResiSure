@@ -1,17 +1,21 @@
 const express = require('express');
 const router = express.Router();
 const PropertyController = require('../controllers/property.controller');
-const { protect, restrictTo } = require('../middleware/auth.middleware');
-const { upload } = require('../config/cloudinary');
+const { protect, restrictTo, optionalProtect } = require('../middleware/auth.middleware');
+const { handleUpload } = require('../config/cloudinary');
 
-// Public routes
-router.get('/', PropertyController.getAll);
-router.get('/:id', PropertyController.getOne);
+// Static landlord route must be registered before /:id
+router.get('/my/listings', protect, restrictTo('landlord'), PropertyController.getMyProperties);
+
+// Public routes — optional JWT so students see is_favorite
+router.get('/', optionalProtect, PropertyController.getAll);
+router.get('/:id/trust-profile', optionalProtect, PropertyController.getTrustProfile);
+router.get('/:id', optionalProtect, PropertyController.getOne);
 
 // Landlord only routes
 router.post('/', protect, restrictTo('landlord'), PropertyController.create);
-router.get('/my/listings', protect, restrictTo('landlord'), PropertyController.getMyProperties);
 router.put('/:id', protect, restrictTo('landlord'), PropertyController.update);
+router.put('/:id/submit-review', protect, restrictTo('landlord'), PropertyController.submitForReview);
 router.delete('/:id', protect, restrictTo('landlord'), PropertyController.remove);
 
 // Image upload — up to 5 images per property
@@ -19,7 +23,7 @@ router.post(
   '/:id/images',
   protect,
   restrictTo('landlord'),
-  upload.array('images', 5),
+  handleUpload,
   PropertyController.uploadImages
 );
 

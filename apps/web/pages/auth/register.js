@@ -1,140 +1,192 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import Head from 'next/head';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { registerUser } from '../../lib/api';
-import { Home, Eye, EyeOff } from 'lucide-react';
+import { getApiErrorMessage } from '../../lib/userFeedback';
+import { getDashboardPath } from '../../hooks/useRequireAuth';
+import AuthShell from '../../components/auth/AuthShell';
+import { Eye, EyeOff } from 'lucide-react';
 
 export default function RegisterPage() {
   const [form, setForm] = useState({
-    full_name: '', email: '', password: '', role: 'student', phone: ''
+    full_name: '', email: '', password: '', role: 'student', phone: '', accepted_terms: false,
   });
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState('');
   const { login } = useAuth();
   const router = useRouter();
 
+  useEffect(() => {
+    if (router.isReady && router.query.role === 'landlord') {
+      setForm((current) => ({ ...current, role: 'landlord' }));
+    }
+  }, [router.isReady, router.query.role]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError('');
     if (form.password.length < 8) {
-      toast.error('Password must be at least 8 characters');
+      const message = 'Password must be at least 8 characters';
+      setError(message);
+      toast.error(message);
+      return;
+    }
+    if (!form.accepted_terms) {
+      const message = 'Please accept the Terms of Use and Privacy Policy';
+      setError(message);
+      toast.error(message);
       return;
     }
     setLoading(true);
     try {
-      const res = await registerUser(form);
+      const res = await registerUser({
+        ...form,
+        email: form.email.trim(),
+        full_name: form.full_name.trim(),
+      });
       const { token, user } = res.data.data;
       login(token, user);
-      toast.success('Account created successfully!');
-      if (user.role === 'landlord') router.push('/dashboard/landlord');
-      else router.push('/dashboard/student');
+      toast.success('Account created');
+      router.push(getDashboardPath(user.role));
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Registration failed');
+      const message = getApiErrorMessage(err, 'We could not create your account. Please try again.');
+      setError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 w-full max-w-md">
-
-        <Link href="/" className="flex items-center gap-2 mb-8">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-            <Home size={16} className="text-white" />
-          </div>
-          <span className="font-bold text-xl text-gray-900">ResiSure</span>
-        </Link>
-
-        <h1 className="text-2xl font-bold text-gray-900 mb-1">Create your account</h1>
-        <p className="text-gray-500 text-sm mb-8">Join ResiSure and book with confidence</p>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
+    <>
+      <Head>
+        <title>Create account — ResiSure</title>
+      </Head>
+      <AuthShell
+        title="Create an account"
+        subtitle="Students book verified rooms. Landlords list properties with payment protection."
+        error={error}
+        footer={(
+          <p className="mt-6 text-center text-sm text-slate-500">
+            Already have an account?{' '}
+            <Link href="/auth/login" className="font-medium text-blue-700 hover:underline">
+              Sign in
+            </Link>
+          </p>
+        )}
+      >
+        <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+            <label className="label" htmlFor="full_name">Full name</label>
             <input
+              id="full_name"
               type="text"
+              autoComplete="name"
               value={form.full_name}
-              onChange={e => setForm({ ...form, full_name: e.target.value })}
-              className="w-full border border-gray-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              onChange={(e) => { setForm({ ...form, full_name: e.target.value }); setError(''); }}
+              className="input"
               placeholder="Bwalya Katwishi"
               required
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email address</label>
+            <label className="label" htmlFor="email">Email address</label>
             <input
+              id="email"
               type="email"
+              autoComplete="email"
               value={form.email}
-              onChange={e => setForm({ ...form, email: e.target.value })}
-              className="w-full border border-gray-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              onChange={(e) => { setForm({ ...form, email: e.target.value }); setError(''); }}
+              className="input"
               placeholder="you@unza.zm"
               required
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Phone number</label>
+            <label className="label" htmlFor="phone">Phone number <span className="font-normal text-slate-400">(optional)</span></label>
             <input
-              type="text"
+              id="phone"
+              type="tel"
+              autoComplete="tel"
               value={form.phone}
-              onChange={e => setForm({ ...form, phone: e.target.value })}
-              className="w-full border border-gray-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              onChange={(e) => setForm({ ...form, phone: e.target.value })}
+              className="input"
               placeholder="0971234567"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">I am a</label>
+            <label className="label" htmlFor="role">I am a</label>
             <select
+              id="role"
               value={form.role}
-              onChange={e => setForm({ ...form, role: e.target.value })}
-              className="w-full border border-gray-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              onChange={(e) => setForm({ ...form, role: e.target.value })}
+              className="input"
             >
-              <option value="student">Student looking for accommodation</option>
+              <option value="student">Student looking for a room</option>
               <option value="landlord">Landlord listing a property</option>
             </select>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+            <label className="label" htmlFor="password">Password</label>
             <div className="relative">
               <input
+                id="password"
                 type={showPassword ? 'text' : 'password'}
+                autoComplete="new-password"
                 value={form.password}
-                onChange={e => setForm({ ...form, password: e.target.value })}
-                className="w-full border border-gray-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 pr-10"
-                placeholder="Min. 8 characters"
+                onChange={(e) => { setForm({ ...form, password: e.target.value }); setError(''); }}
+                className="input pr-10"
+                placeholder="At least 8 characters"
                 required
+                minLength={8}
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-3 text-gray-400 hover:text-gray-600"
+                className="absolute right-3 top-3 text-slate-400 hover:text-slate-600"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
               >
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
           </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50"
-          >
-            {loading ? 'Creating account...' : 'Create Account'}
+          <div className="flex items-start gap-3 text-sm text-slate-600">
+            <input
+              id="accepted_terms"
+              name="accepted_terms"
+              type="checkbox"
+              checked={form.accepted_terms}
+              onChange={(e) => { setForm({ ...form, accepted_terms: e.target.checked }); setError(''); }}
+              className="mt-1 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+              required
+            />
+            <label htmlFor="accepted_terms">
+              I agree to the{' '}
+              <Link href="/legal/terms" className="text-blue-700 hover:underline" target="_blank" rel="noopener noreferrer">
+                Terms of Use<span className="sr-only"> (opens in new tab)</span>
+              </Link>{' '}
+              and{' '}
+              <Link href="/legal/privacy" className="text-blue-700 hover:underline" target="_blank" rel="noopener noreferrer">
+                Privacy Policy<span className="sr-only"> (opens in new tab)</span>
+              </Link>
+              . Payments are protected until move-in is confirmed.
+            </label>
+          </div>
+
+          <button type="submit" disabled={loading} className="btn-primary w-full py-3">
+            {loading ? 'Creating account…' : 'Create an account'}
           </button>
         </form>
-
-        <p className="text-center text-sm text-gray-500 mt-6">
-          Already have an account?{' '}
-          <Link href="/auth/login" className="text-blue-600 font-medium hover:underline">
-            Sign in
-          </Link>
-        </p>
-      </div>
-    </div>
+      </AuthShell>
+    </>
   );
 }

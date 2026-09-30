@@ -1,91 +1,72 @@
 import Link from 'next/link';
-import Image from 'next/image';
-import Badge from '../ui/Badge';
-import { MapPin, BedDouble, Shield, CheckCircle } from 'lucide-react';
+import { MapPin } from 'lucide-react';
+import { getPrimaryImage } from '../../lib/images';
+import FavoriteButton from './FavoriteButton';
+import VerifiedBadge from '../ui/VerifiedBadge';
+import { formatKwacha } from '../../lib/bookingStatus';
+import { accommodationLabel, accommodationAvailabilityText } from '../../lib/propertyAccommodation';
 
-const gradients = [
-  'from-blue-100 to-blue-200',
-  'from-purple-100 to-purple-200',
-  'from-green-100 to-green-200',
-  'from-orange-100 to-orange-200',
-  'from-pink-100 to-pink-200',
-];
-
-export default function PropertyCard({ property, index = 0 }) {
+export default function PropertyCard({ property, onFavoriteChange }) {
   const isVerified = property.verification_status === 'verified';
   const isAvailable = property.available_rooms > 0;
-  const primaryImage = Array.isArray(property.images) && property.images.length > 0
-    ? property.images[0]
-    : null;
-  const gradient = gradients[index % gradients.length];
+  const primaryImage = getPrimaryImage(property.images);
+  const amenities = Array.isArray(property.amenities) ? property.amenities.slice(0, 3) : [];
 
   return (
-    <Link href={`/properties/${property.id}`}>
-      <div className="bg-white rounded-2xl border border-gray-100 hover:shadow-lg transition-all duration-200 cursor-pointer overflow-hidden group">
-
-        {/* Image */}
-        <div className={`h-48 relative overflow-hidden ${!primaryImage ? `bg-gradient-to-br ${gradient}` : ''}`}>
+    <article className="card group overflow-hidden transition-shadow hover:shadow-lift">
+      <div className="relative aspect-[4/3] overflow-hidden bg-slate-100">
+        <Link href={`/properties/${property.id}`} className="block h-full">
           {primaryImage ? (
             <img
               src={primaryImage}
               alt={property.title}
-              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
             />
           ) : (
-            <div className="w-full h-full flex items-center justify-center">
-              <BedDouble size={44} className="text-white opacity-50" />
-            </div>
+            <div className="flex h-full items-center justify-center text-slate-400">No photo yet</div>
           )}
-
-          {/* Overlay badges */}
-          <div className="absolute top-3 left-3 flex gap-2">
-            {isVerified && (
-              <span className="bg-white text-green-600 text-xs font-semibold px-2 py-1 rounded-full flex items-center gap-1 shadow-sm">
-                <CheckCircle size={10} />
-                Verified
-              </span>
-            )}
-            {!isAvailable && (
-              <span className="bg-gray-900 bg-opacity-70 text-white text-xs font-semibold px-2 py-1 rounded-full">
-                Fully Booked
-              </span>
-            )}
-          </div>
-
-          {/* Image count badge */}
-          {Array.isArray(property.images) && property.images.length > 1 && (
-            <span className="absolute bottom-3 right-3 bg-black bg-opacity-50 text-white text-xs px-2 py-0.5 rounded-full">
-              +{property.images.length - 1} photos
+        </Link>
+        <div className="absolute left-3 top-3 flex gap-2">
+          {isVerified ? (
+            <VerifiedBadge compact />
+          ) : (
+            <span className="rounded-full bg-white/95 px-2 py-1 text-xs font-semibold text-amber-800 shadow-sm">
+              Unverified
             </span>
           )}
+          {!isAvailable && (
+            <span className="rounded-full bg-slate-900/80 px-2 py-1 text-xs font-medium text-white">Fully booked</span>
+          )}
         </div>
-
-        {/* Content */}
-        <div className="p-4">
-          <h3 className="font-semibold text-gray-900 text-sm leading-snug mb-1.5 group-hover:text-blue-600 transition-colors line-clamp-2">
-            {property.title}
-          </h3>
-          <div className="flex items-center gap-1 text-gray-400 text-xs mb-3">
-            <MapPin size={11} />
-            <span>{property.area}</span>
-          </div>
-          <div className="border-t border-gray-50 pt-3 flex items-center justify-between">
-            <div>
-              <span className="text-blue-600 font-bold text-lg">
-                ZMW {Number(property.rent_per_month).toLocaleString()}
-              </span>
-              <span className="text-gray-400 text-xs">/mo</span>
-            </div>
-            <div className="flex items-center gap-1 text-xs text-green-600 bg-green-50 px-2 py-1 rounded-full">
-              <Shield size={10} />
-              <span>Escrow</span>
-            </div>
-          </div>
-          <div className="mt-2 text-xs text-gray-400">
-            {property.available_rooms} of {property.total_rooms} room(s) available
-          </div>
+        <div className="absolute right-3 top-3">
+          <FavoriteButton
+            propertyId={property.id}
+            isFavorite={property.is_favorite}
+            onChange={onFavoriteChange}
+            className="border-white"
+          />
         </div>
       </div>
-    </Link>
+      <div className="p-4">
+        <Link href={`/properties/${property.id}`} className="block">
+          <h3 className="font-semibold text-slate-900 group-hover:text-blue-700">{property.title}</h3>
+          <p className="mt-1 flex items-start gap-1 text-sm text-slate-500">
+            <MapPin size={13} className="mt-0.5 shrink-0" />
+            <span className="line-clamp-2">{property.area}{property.area ? ', Lusaka' : property.address}</span>
+          </p>
+          <p className="mt-3 text-lg font-bold text-slate-900">
+            {formatKwacha(property.rent_per_month)} <span className="text-sm font-medium text-slate-500">/ month</span>
+          </p>
+          {amenities.length > 0 && (
+            <p className="mt-2 text-xs capitalize text-slate-500">{amenities.join(' · ')}</p>
+          )}
+          <p className="mt-1 text-xs text-slate-500">{accommodationLabel(property.accommodation_gender)}</p>
+          <p className="mt-0.5 text-xs text-slate-400">
+            {accommodationAvailabilityText(property)}
+          </p>
+          <span className="mt-4 inline-flex text-sm font-semibold text-blue-700">View room</span>
+        </Link>
+      </div>
+    </article>
   );
 }

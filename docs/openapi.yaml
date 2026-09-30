@@ -1,0 +1,587 @@
+openapi: 3.0.3
+info:
+  title: ResiSure API
+  description: |
+    Escrow-enabled student accommodation platform API.
+    Contract shared between web, mobile, and backend layers.
+  version: 1.0.0
+  contact:
+    name: ResiSure
+
+servers:
+  - url: http://localhost:5000
+    description: Local development
+  - url: '{baseUrl}'
+    description: Production
+    variables:
+      baseUrl:
+        default: https://api.resisure.example
+
+tags:
+  - name: Auth
+  - name: Properties
+  - name: Bookings
+  - name: Landlords
+  - name: Students
+  - name: Favorites
+  - name: Notifications
+  - name: Payments
+  - name: Admin
+  - name: System
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+        data:
+          type: object
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        message:
+          type: string
+        code:
+          type: string
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        full_name:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [student, landlord, admin]
+        phone:
+          type: string
+          nullable: true
+        verification_status:
+          type: string
+          enum: [pending, under_review, verified, rejected]
+
+    AuthPayload:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        token:
+          type: string
+
+    RegisterRequest:
+      type: object
+      required: [full_name, email, password, role]
+      properties:
+        full_name:
+          type: string
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+        role:
+          type: string
+          enum: [student, landlord]
+        phone:
+          type: string
+        accepted_terms:
+          type: boolean
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+
+    Property:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+        address:
+          type: string
+        area:
+          type: string
+        rent_per_month:
+          type: number
+        total_rooms:
+          type: integer
+        available_rooms:
+          type: integer
+        property_type:
+          type: string
+          enum: [room, shared, studio, apartment]
+        verification_status:
+          type: string
+        images:
+          type: array
+          items:
+            type: object
+
+    Booking:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - pending
+            - accepted
+            - rejected
+            - escrow_held
+            - move_in_window
+            - confirmed
+            - completed
+            - cancelled
+            - disputed
+            - refunded
+            - timed_out
+        amount:
+          type: number
+        move_in_date:
+          type: string
+          format: date
+        property_title:
+          type: string
+
+paths:
+  /health:
+    get:
+      tags: [System]
+      summary: Health check
+      responses:
+        '200':
+          description: Service is up
+
+  /ready:
+    get:
+      tags: [System]
+      summary: Readiness check (includes database)
+      responses:
+        '200':
+          description: Ready
+        '503':
+          description: Not ready
+
+  /api/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Account created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/AuthPayload'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Email already exists
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Sign in
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/AuthPayload'
+        '401':
+          description: Invalid credentials
+
+  /api/auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Request password reset email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        '200':
+          description: Generic success message (does not reveal if email exists)
+
+  /api/auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: Reset password with token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token:
+                  type: string
+                password:
+                  type: string
+                  minLength: 8
+      responses:
+        '200':
+          description: Password updated
+        '400':
+          description: Invalid or expired token
+
+  /api/auth/me:
+    get:
+      tags: [Auth]
+      security: [{ bearerAuth: [] }]
+      summary: Get current user profile
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          user:
+                            $ref: '#/components/schemas/User'
+    patch:
+      tags: [Auth]
+      security: [{ bearerAuth: [] }]
+      summary: Update profile
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                full_name:
+                  type: string
+                phone:
+                  type: string
+      responses:
+        '200':
+          description: Profile updated
+
+  /api/properties:
+    get:
+      tags: [Properties]
+      summary: List properties (public, optional auth for favorites)
+      parameters:
+        - name: area
+          in: query
+          schema: { type: string }
+        - name: min_price
+          in: query
+          schema: { type: number }
+        - name: max_price
+          in: query
+          schema: { type: number }
+        - name: verified
+          in: query
+          schema: { type: boolean }
+        - name: page
+          in: query
+          schema: { type: integer }
+        - name: limit
+          in: query
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Property list
+    post:
+      tags: [Properties]
+      security: [{ bearerAuth: [] }]
+      summary: Create property (landlord)
+      responses:
+        '201':
+          description: Property created
+
+  /api/properties/{id}:
+    get:
+      tags: [Properties]
+      summary: Get property by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Property details
+    put:
+      tags: [Properties]
+      security: [{ bearerAuth: [] }]
+      summary: Update property (landlord owner)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Updated
+    delete:
+      tags: [Properties]
+      security: [{ bearerAuth: [] }]
+      summary: Delete property (landlord owner)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Deleted
+
+  /api/properties/my/listings:
+    get:
+      tags: [Properties]
+      security: [{ bearerAuth: [] }]
+      summary: Landlord's own listings
+      responses:
+        '200':
+          description: Listings
+
+  /api/bookings:
+    post:
+      tags: [Bookings]
+      security: [{ bearerAuth: [] }]
+      summary: Create booking request (student)
+      responses:
+        '201':
+          description: Booking created
+
+  /api/bookings/my:
+    get:
+      tags: [Bookings]
+      security: [{ bearerAuth: [] }]
+      summary: Student bookings
+      responses:
+        '200':
+          description: Bookings list
+
+  /api/bookings/landlord:
+    get:
+      tags: [Bookings]
+      security: [{ bearerAuth: [] }]
+      summary: Landlord booking requests
+      responses:
+        '200':
+          description: Bookings list
+
+  /api/bookings/{id}:
+    get:
+      tags: [Bookings]
+      security: [{ bearerAuth: [] }]
+      summary: Get booking detail
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Booking detail
+
+  /api/bookings/{id}/accept:
+    put:
+      tags: [Bookings]
+      security: [{ bearerAuth: [] }]
+      summary: Accept booking (landlord)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Accepted
+
+  /api/bookings/{id}/pay:
+    put:
+      tags: [Bookings]
+      security: [{ bearerAuth: [] }]
+      summary: Pay for booking (student, escrow capture)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Payment processed
+
+  /api/bookings/{id}/confirm:
+    put:
+      tags: [Bookings]
+      security: [{ bearerAuth: [] }]
+      summary: Confirm move-in (student)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Move-in confirmed
+
+  /api/favorites:
+    get:
+      tags: [Favorites]
+      security: [{ bearerAuth: [] }]
+      summary: List saved properties (student)
+      responses:
+        '200':
+          description: Favorites
+    post:
+      tags: [Favorites]
+      security: [{ bearerAuth: [] }]
+      summary: Save a property
+      responses:
+        '201':
+          description: Saved
+
+  /api/favorites/{propertyId}:
+    delete:
+      tags: [Favorites]
+      security: [{ bearerAuth: [] }]
+      summary: Remove saved property
+      parameters:
+        - name: propertyId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Removed
+
+  /api/landlords/me:
+    get:
+      tags: [Landlords]
+      security: [{ bearerAuth: [] }]
+      summary: Landlord profile
+      responses:
+        '200':
+          description: Profile
+
+  /api/students/me:
+    get:
+      tags: [Students]
+      security: [{ bearerAuth: [] }]
+      summary: Student profile
+      responses:
+        '200':
+          description: Profile
+
+  /api/notifications:
+    get:
+      tags: [Notifications]
+      security: [{ bearerAuth: [] }]
+      summary: List notifications
+      responses:
+        '200':
+          description: Notifications
+
+  /api/payments/methods:
+    get:
+      tags: [Payments]
+      summary: Available payment methods
+      responses:
+        '200':
+          description: Payment method config
+
+  /api/admin/stats:
+    get:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      summary: Platform statistics
+      responses:
+        '200':
+          description: Stats
+
+  /api/admin/landlords:
+    get:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      summary: List landlords for verification
+      responses:
+        '200':
+          description: Landlords
+
+  /api/admin/disputes:
+    get:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      summary: Open booking disputes
+      responses:
+        '200':
+          description: Disputes

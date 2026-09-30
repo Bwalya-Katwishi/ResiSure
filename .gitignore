@@ -5,11 +5,18 @@ node_modules/
 .env
 .env.local
 .env.production
+.env.*.local
+!.env.example
+resisure-secrets.env
+**/resisure-secrets.env
 
 # Build outputs
 .next/
 dist/
 build/
+
+# Local property photo uploads
+apps/api/uploads/
 
 # OS files
 .DS_Store

@@ -1,31 +1,34 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import Head from 'next/head';
 import { useRouter } from 'next/router';
 import Layout from '../../components/layout/Layout';
+import EmptyState from '../../components/ui/EmptyState';
 import Badge from '../../components/ui/Badge';
-import { useAuth } from '../../context/AuthContext';
+import BookingStepper from '../../components/ui/BookingStepper';
+import { Skeleton } from '../../components/ui/Skeleton';
+import StatusBanner from '../../components/ui/StatusBanner';
+import { useRequireAuth } from '../../hooks/useRequireAuth';
 import {
   getBooking, acceptBooking, rejectBooking,
-  payBooking, confirmMoveIn, raiseDispute
+  payBooking, completePendingPayment, cancelBooking, confirmMoveIn, raiseDispute, getPaymentMethods,
+  getBookingPaymentStatus,
 } from '../../lib/api';
 import toast from 'react-hot-toast';
-import { Shield, CheckCircle, AlertTriangle, Clock, Home, ArrowLeft } from 'lucide-react';
+import { getApiErrorMessage } from '../../lib/userFeedback';
+import { Shield, CheckCircle, AlertTriangle, Home, ArrowLeft, MapPin, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
+import { bookingCopy, formatKwacha, transactionLabel } from '../../lib/bookingStatus';
+import { useRefetchOnFocus } from '../../lib/useRefetchOnFocus';
 
-const statusConfig = {
-  pending: { label: 'Pending Landlord Approval', color: 'pending', description: 'Waiting for the landlord to accept your booking request.' },
-  accepted: { label: 'Awaiting Payment', color: 'pending', description: 'Your landlord has accepted. Pay into escrow on your move-in date to secure the room.' },
-  rejected: { label: 'Booking Rejected', color: 'rejected', description: 'The landlord has declined this booking request.' },
-  escrow_held: { label: 'Payment in Escrow', color: 'escrow', description: 'Your payment is safely held in escrow. Funds will be released only after you confirm move-in.' },
-  move_in_window: { label: 'Confirm Your Move-In', color: 'pending', description: 'You have 72 hours to confirm move-in or raise a dispute. If no action is taken, funds are auto-released.' },
-  timed_out: { label: 'Auto-Released', color: 'default', description: 'No move-in confirmation was received. Funds were automatically released to the landlord.' },
-  confirmed: { label: 'Move-In Confirmed', color: 'verified', description: 'You confirmed move-in. Funds have been released to the landlord.' },
-  disputed: { label: 'Under Dispute', color: 'disputed', description: 'This booking is under admin review. Funds are frozen until resolved.' },
-  completed: { label: 'Completed', color: 'completed', description: 'This booking has been completed successfully.' },
-  refunded: { label: 'Refunded', color: 'verified', description: 'The dispute was resolved in your favour. Funds have been refunded.' },
+const providerLabel = {
+  mock: 'Protected payment',
+  mtn_momo: 'MTN MoMo',
+  airtel_money: 'Airtel Money',
+  zamtel_kwacha: 'Zamtel Kwacha',
 };
 
 export default function BookingDetailPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, authorized } = useRequireAuth();
   const router = useRouter();
   const { id } = router.query;
   const [booking, setBooking] = useState(null);
@@ -33,37 +36,130 @@ export default function BookingDetailPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [disputeReason, setDisputeReason] = useState('');
   const [showDisputeForm, setShowDisputeForm] = useState(false);
+  const [paymentForm, setPaymentForm] = useState({
+    outcome: 'success',
+    phone: '',
+    provider: '',
+  });
+  const [paymentMethods, setPaymentMethods] = useState({ mode: 'mock', demo: true, networks: [] });
+  const [paymentPolling, setPaymentPolling] = useState(false);
 
-  useEffect(() => {
-    if (!authLoading && !user) router.push('/auth/login');
-  }, [user, authLoading]);
-
-  useEffect(() => {
-    if (id && user) {
-      getBooking(id)
-        .then(res => setBooking(res.data.data.booking))
-        .catch(() => toast.error('Booking not found'))
-        .finally(() => setLoading(false));
+  const loadBooking = useCallback(async ({ silent = false } = {}) => {
+    if (!id || !authorized) return;
+    if (!silent) setLoading(true);
+    try {
+      const res = await getBooking(id);
+      const b = res.data.data.booking;
+      setBooking(b);
+      setPaymentForm((prev) => ({
+        ...prev,
+        phone: b.student_phone || user?.phone || '',
+      }));
+    } catch {
+      if (!silent) toast.error('We could not find that booking.');
+    } finally {
+      if (!silent) setLoading(false);
     }
-  }, [id, user]);
+  }, [id, authorized, user?.phone]);
 
-  const handleAction = async (action, successMsg) => {
+  useEffect(() => {
+    if (id && authorized) {
+      loadBooking();
+      getPaymentMethods()
+        .then((res) => setPaymentMethods(res.data.data))
+        .catch(() => {});
+    }
+  }, [id, authorized, loadBooking]);
+
+  useRefetchOnFocus(() => loadBooking({ silent: true }), Boolean(id && authorized));
+
+  const hasPendingCapture = (booking?.transactions || []).some(
+    (tx) => tx.type === 'capture' && tx.status === 'pending'
+  );
+
+  useEffect(() => {
+    if (!id || !authorized || !hasPendingCapture || paymentMethods.mode !== 'live') return undefined;
+    setPaymentPolling(true);
+    let attempts = 0;
+    const timer = setInterval(async () => {
+      attempts += 1;
+      try {
+        const res = await getBookingPaymentStatus(id);
+        if (res.data.data.booking_status !== 'accepted') {
+          await loadBooking({ silent: true });
+          setPaymentPolling(false);
+          clearInterval(timer);
+        }
+      } catch {
+        /* ignore transient poll errors */
+      }
+      if (attempts >= 24) {
+        setPaymentPolling(false);
+        clearInterval(timer);
+      }
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [id, authorized, hasPendingCapture, paymentMethods.mode, loadBooking]);
+
+  useEffect(() => {
+    if (!router.isReady || !authorized || !id) return undefined;
+    const onRoute = (url) => {
+      if (url.includes(`/bookings/${id}`)) {
+        loadBooking({ silent: true });
+      }
+    };
+    router.events.on('routeChangeComplete', onRoute);
+    return () => router.events.off('routeChangeComplete', onRoute);
+  }, [router, authorized, id, loadBooking]);
+
+  const ACTION_SUCCESS = {
+    accept: 'Booking request accepted. The student has been notified.',
+    reject: 'Booking request declined. The student has been notified.',
+    pay: 'Payment recorded successfully. Your rent is now protected in escrow.',
+    'complete-pending': 'Payment completed successfully.',
+    cancel: 'Booking cancelled.',
+    confirm: 'Move-in confirmed successfully.',
+    dispute: 'Your dispute has been submitted and is under review.',
+  };
+
+  const handleAction = async (action) => {
+    if (action === 'cancel' && !window.confirm('Cancel this unpaid booking? This cannot be undone.')) {
+      return;
+    }
+    if (action === 'reject' && !window.confirm('Decline this booking request?')) {
+      return;
+    }
     setActionLoading(true);
     try {
       let res;
       if (action === 'accept') res = await acceptBooking(id);
       else if (action === 'reject') res = await rejectBooking(id);
-      else if (action === 'pay') res = await payBooking(id);
+      else if (action === 'pay') {
+        if (!paymentForm.phone.trim()) {
+          toast.error('Enter your MTN or Airtel number');
+          setActionLoading(false);
+          return;
+        }
+        res = await payBooking(id, paymentMethods.mode === 'live'
+          ? { phone: paymentForm.phone, provider: paymentForm.provider || undefined }
+          : paymentForm);
+      }
+      else if (action === 'complete-pending') {
+        res = await completePendingPayment(id, { outcome: 'success' });
+      }
+      else if (action === 'cancel') {
+        res = await cancelBooking(id);
+      }
       else if (action === 'confirm') res = await confirmMoveIn(id);
       else if (action === 'dispute') {
-        if (!disputeReason.trim()) { toast.error('Please provide a reason'); return; }
+        if (!disputeReason.trim()) { toast.error('Please provide a reason'); setActionLoading(false); return; }
         res = await raiseDispute(id, disputeReason);
         setShowDisputeForm(false);
       }
-      setBooking(res.data.data.booking);
-      toast.success(successMsg);
+      await loadBooking({ silent: true });
+      toast.success(res.data.message || ACTION_SUCCESS[action] || 'Done.');
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Action failed');
+      toast.error(getApiErrorMessage(err, 'We could not complete that request. Please try again.'));
     } finally {
       setActionLoading(false);
     }
@@ -72,276 +168,474 @@ export default function BookingDetailPage() {
   if (authLoading || loading) {
     return (
       <Layout>
-        <div className="flex items-center justify-center py-20">
-          <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <div className="space-y-4 lg:col-span-2">
+            <Skeleton className="h-56 w-full" />
+            <Skeleton className="h-40 w-full" />
+          </div>
+          <Skeleton className="h-64 w-full" />
         </div>
       </Layout>
     );
   }
 
-  if (!booking) return null;
+  if (!booking) {
+    return (
+      <Layout>
+        <Head>
+          <title>Booking not found — ResiSure</title>
+        </Head>
+        <EmptyState
+          icon={Home}
+          title="Booking not found"
+          body="This booking may have been removed or you may not have access to it."
+          actionHref={user?.role === 'landlord' ? '/dashboard/landlord' : '/dashboard/student'}
+          actionLabel="Back to dashboard"
+        />
+      </Layout>
+    );
+  }
 
-  const config = statusConfig[booking.status] || statusConfig.pending;
+  const config = bookingCopy(booking.status);
   const isStudent = user?.role === 'student';
   const isLandlord = user?.role === 'landlord';
+  const transactions = booking.transactions || [];
+  const dashboardHref = isStudent ? '/dashboard/student' : isLandlord ? '/dashboard/landlord' : '/dashboard/admin';
+  const bookingRef = `RS-${String(booking.id).slice(0, 8).toUpperCase()}`;
 
   return (
     <Layout>
-      {/* Back */}
-      <Link href={isStudent ? '/dashboard/student' : '/dashboard/landlord'} className="flex items-center gap-2 text-gray-500 hover:text-gray-700 text-sm mb-6 transition-colors">
+      <Head>
+        <title>{booking.property_title} — Booking — ResiSure</title>
+      </Head>
+      <Link href={dashboardHref} className="mb-6 inline-flex items-center gap-2 text-sm text-slate-500 hover:text-slate-800">
         <ArrowLeft size={16} />
-        Back to Dashboard
+        Back to dashboard
       </Link>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-        {/* Main */}
-        <div className="lg:col-span-2 space-y-6">
-
-          {/* Status card */}
-          <div className="bg-white rounded-xl border border-gray-100 p-6">
-            <div className="flex items-start justify-between mb-4">
-              <h1 className="text-xl font-bold text-gray-900">Booking Details</h1>
+      <div className="grid grid-cols-1 gap-6 pb-28 lg:grid-cols-3 lg:pb-0">
+        <div className="order-2 space-y-6 lg:order-1 lg:col-span-2">
+          <div className="card p-4 sm:p-6">
+            <p className="mb-1 text-sm font-medium text-slate-500">Your booking</p>
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <h1 className="text-xl font-bold text-slate-900 sm:text-2xl">{booking.property_title}</h1>
               <Badge type={config.color}>{config.label}</Badge>
             </div>
 
-            <div className={`rounded-lg p-4 mb-6 ${
-              booking.status === 'move_in_window' ? 'bg-yellow-50 border border-yellow-200' :
-              booking.status === 'disputed' ? 'bg-red-50 border border-red-200' :
-              booking.status === 'completed' || booking.status === 'confirmed' ? 'bg-green-50 border border-green-200' :
-              'bg-blue-50 border border-blue-200'
+            <BookingStepper status={booking.status} />
+
+            <div className={`mt-6 rounded-xl p-4 ${
+              booking.status === 'move_in_window' ? 'border border-amber-200 bg-amber-50' :
+              booking.status === 'disputed' ? 'border border-amber-200 bg-amber-50' :
+              booking.status === 'completed' || booking.status === 'confirmed' ? 'border border-green-200 bg-green-50' :
+              booking.status === 'rejected' || booking.status === 'cancelled' ? 'border border-red-200 bg-red-50' :
+              'border border-blue-100 bg-blue-50'
             }`}>
-              <p className="text-sm text-gray-700">{config.description}</p>
+              <p className="text-sm text-slate-700">{config.description}</p>
+              {config.next && <p className="mt-2 text-sm font-medium text-slate-800">Next step: {config.next}</p>}
+              {booking.status === 'move_in_window' && booking.auto_release_at && (
+                <p className="mt-2 text-xs text-amber-800">
+                  Confirm by {new Date(booking.auto_release_at).toLocaleString('en-GB')} or the payment will be released.
+                </p>
+              )}
             </div>
 
-            {/* Property info */}
-            <div className="space-y-3">
+            <div className="mt-6 space-y-3">
               <div className="flex items-center gap-2">
-                <Home size={16} className="text-gray-400" />
+                <Home size={16} className="text-slate-400" />
                 <div>
-                  <p className="font-semibold text-gray-900">{booking.property_title}</p>
-                  <p className="text-gray-500 text-sm">{booking.property_address}</p>
+                  <p className="font-semibold text-slate-900">{booking.property_title}</p>
+                  <p className="text-sm text-slate-500">{booking.property_address}</p>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4 pt-3 border-t border-gray-50">
+              <div className="grid grid-cols-1 gap-4 border-t border-slate-100 pt-3 sm:grid-cols-2">
                 <div>
-                  <p className="text-xs text-gray-400 mb-1">Move-in Date</p>
-                  <p className="text-sm font-medium text-gray-900">
+                  <p className="mb-1 text-xs text-slate-400">Move-in by</p>
+                  <p className="text-sm font-medium text-slate-900">
                     {new Date(booking.move_in_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
                   </p>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-400 mb-1">Monthly Rent</p>
-                  <p className="text-sm font-bold text-blue-600">
-                    ZMW {Number(booking.amount).toLocaleString()}
-                  </p>
+                  <p className="mb-1 text-xs text-slate-400">Amount</p>
+                  <p className="text-sm font-bold text-slate-900">{formatKwacha(booking.amount)}</p>
+                </div>
+                <div>
+                  <p className="mb-1 text-xs text-slate-400">Booking reference</p>
+                  <p className="text-sm font-medium text-slate-900">{bookingRef}</p>
                 </div>
                 {isLandlord && (
                   <div>
-                    <p className="text-xs text-gray-400 mb-1">Student</p>
-                    <p className="text-sm font-medium text-gray-900">{booking.student_name}</p>
-                    <p className="text-xs text-gray-400">{booking.student_phone}</p>
+                    <p className="mb-1 text-xs text-slate-400">Student</p>
+                    <p className="text-sm font-medium text-slate-900">{booking.student_name}</p>
+                    <p className="text-xs text-slate-400">{booking.student_phone}</p>
                   </div>
                 )}
               </div>
             </div>
           </div>
 
-          {/* Escrow Timeline */}
-          <div className="bg-white rounded-xl border border-gray-100 p-6">
-            <h2 className="font-bold text-gray-900 mb-5 flex items-center gap-2">
+          {isStudent && booking.property_location && (
+            <div className="card p-6">
+              <h2 className="mb-2 flex items-center gap-2 font-semibold text-slate-900">
+                <MapPin size={16} className="text-blue-600" />
+                Exact property location
+              </h2>
+              <p className="mb-4 text-sm text-slate-500">
+                Your payment is protected. Open Google Maps to navigate to the property for your move-in on{' '}
+                {new Date(booking.move_in_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}.
+              </p>
+              <a
+                href={booking.property_location.maps_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-primary inline-flex w-full items-center justify-center gap-2 sm:w-auto"
+              >
+                <ExternalLink size={14} />
+                Open in Google Maps
+              </a>
+            </div>
+          )}
+
+          <div className="card p-6">
+            <h2 className="mb-4 flex items-center gap-2 font-semibold text-slate-900">
               <Shield size={16} className="text-blue-600" />
-              Escrow Timeline
+              Payment protection
             </h2>
-            <div className="space-y-4">
+            <p className="mb-5 text-sm text-slate-500">
+              Your payment is protected until you confirm your move-in. If something is not right, it can be held while the issue is reviewed.
+            </p>
+            <div className="space-y-3 text-sm">
               {[
-                { label: 'Booking Created', done: true, time: booking.created_at },
-                { label: 'Landlord Accepted', done: ['accepted','escrow_held','move_in_window','confirmed','completed','disputed','timed_out'].includes(booking.status), time: null },
-                { label: 'Payment Captured into Escrow', done: !!booking.escrow_held_at, time: booking.escrow_held_at },
-                { label: 'Move-in Window Opened', done: !!booking.move_in_window_opens_at, time: booking.move_in_window_opens_at },
-                { label: 'Student Confirmed Move-in', done: !!booking.confirmed_at, time: booking.confirmed_at },
-                { label: 'Funds Released to Landlord', done: booking.status === 'completed', time: booking.confirmed_at },
-              ].map((step, i) => (
-                <div key={i} className="flex items-center gap-3">
-                  <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${
-                    step.done ? 'bg-green-100' : 'bg-gray-100'
-                  }`}>
-                    {step.done
-                      ? <CheckCircle size={14} className="text-green-600" />
-                      : <Clock size={14} className="text-gray-400" />
-                    }
+                { label: 'Booking requested', done: true },
+                { label: 'Landlord accepted', done: !['pending', 'rejected', 'cancelled'].includes(booking.status) },
+                { label: 'Payment protected', done: !!booking.escrow_held_at },
+                { label: 'Move-in window open', done: !!booking.move_in_window_opens_at },
+                { label: 'Move-in confirmed', done: !!booking.confirmed_at },
+                { label: 'Landlord paid', done: booking.status === 'completed' || booking.status === 'timed_out' },
+              ].map((step) => (
+                <div key={step.label} className="flex items-center gap-3">
+                  <div className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full ${step.done ? 'bg-green-100' : 'bg-slate-100'}`}>
+                    <CheckCircle size={14} className={step.done ? 'text-green-600' : 'text-slate-300'} />
                   </div>
-                  <div className="flex-1">
-                    <p className={`text-sm ${step.done ? 'text-gray-900 font-medium' : 'text-gray-400'}`}>
-                      {step.label}
-                    </p>
-                    {step.done && step.time && (
-                      <p className="text-xs text-gray-400">
-                        {new Date(step.time).toLocaleDateString()}
-                      </p>
-                    )}
-                  </div>
+                  <p className={step.done ? 'font-medium text-slate-900' : 'text-slate-400'}>{step.label}</p>
                 </div>
               ))}
             </div>
           </div>
+
+          <div className="card p-6">
+            <h2 className="mb-1 font-semibold text-slate-900">Payment history</h2>
+            <p className="mb-4 text-xs text-slate-500">A record of payments, releases, and refunds for this booking.</p>
+            {transactions.length === 0 ? (
+              <p className="text-sm text-slate-400">No payments yet.</p>
+            ) : (
+              <div className="space-y-3">
+                {transactions.map((tx) => (
+                  <div key={tx.id} className="rounded-xl border border-slate-100 p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-slate-900">{transactionLabel(tx.type)}</p>
+                        <p className="mt-1 break-words text-xs text-slate-500">
+                          Ref: {tx.reference}
+                          {tx.payment_provider && (
+                            <> · {providerLabel[tx.payment_provider] || tx.payment_provider}</>
+                          )}
+                          {tx.payer_phone && <> · {tx.payer_phone}</>}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-400">
+                          {new Date(tx.created_at).toLocaleString('en-GB')}
+                        </p>
+                      </div>
+                      <div className="sm:text-right">
+                        <p className="text-sm font-bold text-slate-900">{formatKwacha(tx.amount)}</p>
+                        <p className="mt-1 text-xs capitalize text-green-700">
+                          {tx.status === 'completed' ? 'Completed' : tx.status === 'pending' ? 'Waiting for confirmation' : tx.status}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Actions sidebar */}
-        <div className="space-y-4">
-
-          {/* Landlord actions */}
+        <div className="order-1 space-y-4 lg:order-2">
           {isLandlord && booking.status === 'pending' && (
-            <div className="bg-white rounded-xl border border-gray-100 p-5">
-              <h3 className="font-bold text-gray-900 mb-4">Booking Request</h3>
-              <p className="text-gray-500 text-sm mb-4">
-                {booking.student_name} wants to book this property. Accept or decline their request.
+            <div className="card p-5">
+              <h3 className="mb-2 font-semibold text-slate-900">Booking request</h3>
+              <p className="mb-4 text-sm text-slate-500">
+                {booking.student_name} wants to book this room. Accept or decline their request.
               </p>
               <div className="space-y-2">
                 <button
-                  onClick={() => handleAction('accept', 'Booking accepted!')}
+                  onClick={() => handleAction('accept')}
                   disabled={actionLoading}
-                  className="w-full bg-green-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                  className="btn-primary w-full"
                 >
                   <CheckCircle size={14} />
-                  Accept Booking
+                  {actionLoading ? 'Accepting…' : 'Accept booking'}
                 </button>
                 <button
-                  onClick={() => handleAction('reject', 'Booking rejected')}
+                  onClick={() => handleAction('reject')}
                   disabled={actionLoading}
-                  className="w-full bg-red-50 text-red-600 border border-red-200 py-2 rounded-lg text-sm font-medium hover:bg-red-100 transition-colors disabled:opacity-50"
+                  className="btn-danger w-full"
                 >
-                  Decline
+                  {actionLoading ? 'Declining…' : 'Decline'}
                 </button>
               </div>
             </div>
           )}
 
-          {/* Student — pay into escrow */}
-          {isStudent && booking.status === 'accepted' && (() => {
-            const moveInDate = new Date(booking.move_in_date);
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            moveInDate.setHours(0, 0, 0, 0);
-            const canPay = moveInDate <= today;
+          {isStudent && ['pending', 'accepted'].includes(booking.status) && (
+            <button
+              type="button"
+              onClick={() => handleAction('cancel')}
+              disabled={actionLoading}
+              className="w-full rounded-xl border border-red-200 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+            >
+              {actionLoading ? 'Cancelling…' : 'Cancel unpaid booking'}
+            </button>
+          )}
 
-            return (
-            <div className="bg-white rounded-xl border border-gray-100 p-5">
-              <h3 className="font-bold text-gray-900 mb-2">Pay into Escrow</h3>
-              {canPay ? (
-                <>
-                  <p className="text-gray-500 text-sm mb-4">
-                    Your move-in date has arrived. Pay now to secure your room. Funds are held safely until you confirm move-in.
-                  </p>
-                  <div className="bg-blue-50 rounded-lg p-3 mb-4">
-                    <p className="text-xs text-blue-600 font-medium">Amount to pay</p>
-                    <p className="text-2xl font-bold text-blue-700">ZMW {Number(booking.amount).toLocaleString()}</p>
-                    <p className="text-xs text-blue-400 mt-1">Held in escrow — safe until move-in confirmed</p>
+          {isStudent && booking.status === 'accepted' && (
+            <div className="card p-5">
+              <h3 className="mb-1 text-lg font-semibold text-slate-900">Make your payment</h3>
+              <p className="mb-4 text-sm text-slate-500">
+                Your payment is protected until you confirm your move-in.
+              </p>
+              <div className="mb-4 rounded-xl border border-slate-100 bg-slate-50 p-3">
+                <p className="text-xs text-slate-500">Amount</p>
+                <p className="text-2xl font-bold text-slate-900">{formatKwacha(booking.amount)}</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {booking.property_title}
+                  {booking.landlord_name ? ` · ${booking.landlord_name}` : ''}
+                </p>
+                <p className="mt-1 text-xs text-slate-400">Ref {bookingRef}</p>
+              </div>
+
+              {paymentMethods.demo && (
+                <StatusBanner type="warning" title="Demo payment mode" className="mb-4">
+                  Payments use the ResiSure mock provider — not real MTN, Airtel, or Zamtel debits. Configure live credentials to enable mobile money.
+                </StatusBanner>
+              )}
+
+              {paymentMethods.mode === 'live' && (
+                <div className="mb-4">
+                  <span className="label">Payment method</span>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    {paymentMethods.networks.filter((n) => n.configured).map((network) => (
+                      <button
+                        key={network.id}
+                        type="button"
+                        onClick={() => setPaymentForm({ ...paymentForm, provider: network.id })}
+                        className={`rounded-xl border px-3 py-2 text-left text-sm ${
+                          paymentForm.provider === network.id || (!paymentForm.provider && network.id === paymentMethods.networks.find((x) => x.configured)?.id)
+                            ? 'border-blue-600 bg-blue-50 text-blue-800'
+                            : 'border-slate-200 text-slate-700'
+                        }`}
+                      >
+                        <span className="font-medium">{network.label}</span>
+                        <span className="mt-0.5 block text-xs text-slate-500">{network.prefixes.join(', ')}</span>
+                      </button>
+                    ))}
                   </div>
-                  <button
-                    onClick={() => handleAction('pay', 'Payment captured into escrow!')}
-                    disabled={actionLoading}
-                    className="w-full bg-blue-600 text-white py-3 rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                  >
-                    <Shield size={14} />
-                    {actionLoading ? 'Processing...' : 'Pay into Escrow'}
-                  </button>
-                </>
-              ) : (
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                  <p className="text-sm text-yellow-800 font-medium mb-1">Payment opens on move-in date</p>
-                  <p className="text-xs text-yellow-700">
-                    You can pay on {new Date(booking.move_in_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}.
-                    Your booking is secured once the landlord has accepted.
-                  </p>
                 </div>
               )}
-            </div>
-            );
-          })()}
 
-          {/* Legacy escrow_held — awaiting move-in window */}
+              {paymentMethods.demo && (
+                <>
+                  <p className="mb-2 text-xs text-slate-500">
+                    Choose a demo outcome below. This does not contact a mobile-money network.
+                  </p>
+                  <span id="payment-outcome-label" className="label">Payment result</span>
+                  <div
+                    role="radiogroup"
+                    aria-labelledby="payment-outcome-label"
+                    className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-3"
+                  >
+                    {[
+                      { id: 'success', label: 'Success' },
+                      { id: 'failed', label: 'Failed' },
+                      { id: 'pending', label: 'Pending' },
+                    ].map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={paymentForm.outcome === p.id}
+                        onClick={() => setPaymentForm({ ...paymentForm, outcome: p.id })}
+                        className={`rounded-xl border px-3 py-2 text-center text-sm ${
+                          paymentForm.outcome === p.id
+                            ? 'border-blue-600 bg-blue-600 text-white'
+                            : 'border-slate-200 text-slate-700'
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {hasPendingCapture && (
+                <StatusBanner type="info" title="Payment pending" className="mb-4">
+                  {paymentPolling
+                    ? 'Waiting for mobile-money confirmation… This page refreshes automatically.'
+                    : 'Your payment is pending provider confirmation. You can refresh this page or try again if it expires.'}
+                </StatusBanner>
+              )}
+
+              <label className="label" htmlFor="pay-phone">
+                {paymentMethods.mode === 'live' ? 'Mobile money number' : 'Phone number'}
+              </label>
+              <input
+                id="pay-phone"
+                type="tel"
+                value={paymentForm.phone}
+                onChange={(e) => setPaymentForm({ ...paymentForm, phone: e.target.value })}
+                className="input mb-3"
+                placeholder="096 / 097 / 095…"
+              />
+
+              <button
+                onClick={() => handleAction('pay')}
+                disabled={actionLoading}
+                className="btn-primary w-full py-3"
+              >
+                <Shield size={14} />
+                {actionLoading ? 'Processing…' : paymentMethods.demo ? 'Run demo payment' : 'Pay with mobile money'}
+              </button>
+
+              {paymentMethods.mode !== 'live' && (booking.transactions || []).some((tx) => tx.type === 'capture' && tx.status === 'pending') && (
+                <button
+                  onClick={() => handleAction('complete-pending')}
+                  disabled={actionLoading}
+                  className="btn-secondary mt-2 w-full"
+                >
+                  Confirm pending payment
+                </button>
+              )}
+            </div>
+          )}
+
           {isStudent && booking.status === 'escrow_held' && (
-            <div className="bg-white rounded-xl border border-gray-100 p-5">
-              <h3 className="font-bold text-gray-900 mb-2">Payment in Escrow</h3>
-              <p className="text-gray-500 text-sm">
-                Your payment is held securely. The move-in confirmation window will open on your move-in date.
+            <div className="card p-5">
+              <h3 className="mb-2 font-semibold text-slate-900">Payment protected</h3>
+              <p className="text-sm text-slate-500">
+                Your payment is held securely. Confirm your move-in after checking the room on your move-in date.
               </p>
             </div>
           )}
 
-          {/* Student — confirm or dispute */}
           {isStudent && booking.status === 'move_in_window' && (
-            <div className="bg-white rounded-xl border border-gray-100 p-5">
-              <h3 className="font-bold text-gray-900 mb-2">Move-In Confirmation</h3>
-              <p className="text-gray-500 text-sm mb-4">
-                Have you moved in and the property matches its listing?
+            <div className="card p-5">
+              <h3 className="mb-2 font-semibold text-slate-900">Confirm your move-in</h3>
+              <p className="mb-4 text-sm text-slate-500">
+                Check the room. If it matches the listing, confirm so the landlord can be paid.
               </p>
 
               <button
-                onClick={() => handleAction('confirm', 'Move-in confirmed! Funds released to landlord.')}
+                onClick={() => handleAction('confirm')}
                 disabled={actionLoading}
-                className="w-full bg-green-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 mb-2"
+                className="btn-primary mb-2 w-full"
               >
                 <CheckCircle size={14} />
-                {actionLoading ? 'Processing...' : 'Confirm Move-In'}
+                {actionLoading ? 'Processing…' : 'Confirm move-in'}
               </button>
 
               <button
                 onClick={() => setShowDisputeForm(!showDisputeForm)}
-                className="w-full bg-red-50 text-red-600 border border-red-200 py-2 rounded-lg text-sm font-medium hover:bg-red-100 transition-colors flex items-center justify-center gap-2"
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 py-2.5 text-sm font-medium text-red-600 hover:bg-red-100"
               >
                 <AlertTriangle size={14} />
-                Raise a Dispute
+                Something is not right
               </button>
 
               {showDisputeForm && (
                 <div className="mt-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Describe the issue
-                  </label>
+                  <label className="label" htmlFor="dispute-reason">Describe the issue</label>
                   <textarea
+                    id="dispute-reason"
                     value={disputeReason}
-                    onChange={e => setDisputeReason(e.target.value)}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400 mb-2"
+                    onChange={(e) => setDisputeReason(e.target.value)}
+                    className="input mb-2"
                     rows={3}
-                    placeholder="e.g. Property does not match photos, no water supply..."
+                    placeholder="e.g. The room does not match the photos"
                   />
                   <button
-                    onClick={() => handleAction('dispute', 'Dispute raised. Funds frozen pending admin review.')}
+                    onClick={() => handleAction('dispute')}
                     disabled={actionLoading}
-                    className="w-full bg-red-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-red-700 transition-colors disabled:opacity-50"
+                    className="btn-danger w-full"
                   >
-                    {actionLoading ? 'Submitting...' : 'Submit Dispute'}
+                    {actionLoading ? 'Submitting…' : 'Submit issue'}
                   </button>
                 </div>
               )}
 
-              <div className="mt-4 bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-                <p className="text-xs text-yellow-700">
-                  ⏰ Auto-release in 72 hours if no action is taken. Funds go to landlord automatically.
+              <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                <p className="text-xs text-amber-800">
+                  If no action is taken, the payment is released after 72 hours. You will get a reminder in the last 24 hours.
                 </p>
               </div>
             </div>
           )}
 
-          {/* Completed state */}
-          {['completed', 'confirmed', 'refunded'].includes(booking.status) && (
-            <div className="bg-green-50 border border-green-200 rounded-xl p-5 text-center">
-              <CheckCircle size={32} className="text-green-500 mx-auto mb-2" />
+          {['completed', 'confirmed', 'refunded', 'timed_out'].includes(booking.status) && (
+            <div className="rounded-2xl border border-green-200 bg-green-50 p-5 text-center">
+              <CheckCircle size={32} className="mx-auto mb-2 text-green-600" />
               <p className="font-semibold text-green-800">
-                {booking.status === 'refunded' ? 'Refund Processed' : 'Booking Complete'}
+                {booking.status === 'refunded' ? 'Refund processed' : 'Booking complete'}
               </p>
-              <p className="text-green-600 text-xs mt-1">
+              <p className="mt-1 text-xs text-green-700">
                 {booking.status === 'refunded'
-                  ? 'Funds have been returned to the student'
-                  : 'Funds have been released to the landlord'}
+                  ? 'The payment was returned to the student.'
+                  : 'The landlord has been paid.'}
               </p>
             </div>
           )}
-
         </div>
       </div>
+
+      {isStudent && booking.status === 'accepted' && (
+        <div className="mobile-action-bar p-3 lg:hidden">
+          <div className="mx-auto flex max-w-6xl items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-bold text-slate-900">{formatKwacha(booking.amount)}</p>
+              <p className="truncate text-xs text-slate-500">Ready for payment</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleAction('pay')}
+              disabled={actionLoading}
+              className="btn-primary shrink-0"
+            >
+              <Shield size={14} />
+              {actionLoading ? 'Processing…' : 'Pay now'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {isStudent && booking.status === 'move_in_window' && (
+        <div className="mobile-action-bar p-3 lg:hidden">
+          <div className="mx-auto flex max-w-6xl items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-bold text-slate-900">Move-in window open</p>
+              <p className="truncate text-xs text-slate-500">Confirm after visiting the room</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleAction('confirm')}
+              disabled={actionLoading}
+              className="btn-primary shrink-0"
+            >
+              <CheckCircle size={14} />
+              {actionLoading ? 'Processing…' : 'Confirm move-in'}
+            </button>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 }

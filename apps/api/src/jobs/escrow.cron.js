@@ -7,6 +7,7 @@ const startEscrowCron = () => {
     console.log('⏰ Running escrow auto-release check...');
     try {
       await EscrowService.openMoveInWindows();
+      await EscrowService.sendDeadlineReminders();
       await EscrowService.autoReleaseExpired();
     } catch (err) {
       console.error('❌ Escrow cron job failed:', err.message);

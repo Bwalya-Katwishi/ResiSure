@@ -48,7 +48,9 @@ export function useAdminDashboard(authorized) {
   }, [authorized]);
 
   const openDoc = (url, title) => {
-    openAuthenticatedDocument(url, { title: title || 'Document' }).catch(() => toast.error('Could not open document'));
+    openAuthenticatedDocument(url, { title: title || 'Document' }).catch((err) => {
+      toast.error(err?.message || 'Could not open document');
+    });
   };
 
   const verifyLandlord = async (userId, status) => {

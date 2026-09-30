@@ -5,8 +5,8 @@ import { useEscapeKey } from '../../lib/useEscapeKey';
 export default function DocumentViewerModal({ blob, contentType, title = 'Document', filename = 'document', onClose }) {
   const closeRef = useRef(null);
   const objectUrl = useMemo(() => URL.createObjectURL(blob), [blob]);
-  const isPdf = contentType?.includes('pdf');
-  const isImage = contentType?.startsWith('image/');
+  const isPdf = contentType?.includes('pdf') || /\.pdf$/i.test(filename);
+  const isImage = contentType?.startsWith('image/') || /\.(jpe?g|png|webp|gif)$/i.test(filename);
 
   useEffect(() => {
     closeRef.current = document.activeElement;

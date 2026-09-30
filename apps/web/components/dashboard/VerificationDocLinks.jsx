@@ -10,8 +10,8 @@ export default function VerificationDocLinks({ docs, className = '' }) {
   const handleOpen = async (doc) => {
     try {
       await openAuthenticatedDocument(doc.url, { title: doc.label });
-    } catch {
-      toast.error('Could not open document. Please try again.');
+    } catch (err) {
+      toast.error(err?.message || 'Could not open document. Please try again.');
     }
   };
 

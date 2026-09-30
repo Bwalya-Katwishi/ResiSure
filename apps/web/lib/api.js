@@ -29,9 +29,10 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401 && typeof window !== 'undefined') {
-      const isAuthRoute = error.config?.url?.includes('/api/auth/login')
-        || error.config?.url?.includes('/api/auth/register');
-      if (!isAuthRoute && onUnauthorized) {
+      const url = error.config?.url || '';
+      const isAuthRoute = url.includes('/api/auth/login') || url.includes('/api/auth/register');
+      const isVerificationDoc = url.includes('/verification/document') || url.includes('/verification-document');
+      if (!isAuthRoute && !isVerificationDoc && onUnauthorized) {
         onUnauthorized();
       }
     }
@@ -98,20 +99,59 @@ function filenameFromPath(pathOrUrl) {
   return 'document';
 }
 
-async function blobFromApiResponse(res, pathOrUrl) {
-  const headerType = res.headers['content-type'] || '';
-  if (headerType.includes('application/json') || res.data?.type === 'application/json') {
-    const text = await res.data.text();
-    let message = 'Could not open document';
+function resolveDocumentRequestUrl(pathOrUrl) {
+  if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl;
+  const base = (api.defaults.baseURL || '').replace(/\/$/, '');
+  const path = pathOrUrl.startsWith('/') ? pathOrUrl : `/${pathOrUrl}`;
+  return `${base}${path}`;
+}
+
+async function parseApiErrorMessage(response) {
+  let message = 'Could not open document';
+  try {
+    const clone = response.clone();
+    const contentType = clone.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const body = await clone.json();
+      return body.message || body.error || message;
+    }
+    const text = (await clone.text()).trim();
+    if (text.startsWith('{')) {
+      const body = JSON.parse(text);
+      return body.message || body.error || message;
+    }
+    if (text) return text.slice(0, 200);
+  } catch {
+    /* ignore */
+  }
+  return message;
+}
+
+async function normalizeDocumentBlob(blob, filename) {
+  if (!blob || blob.size === 0) {
+    throw new Error('Document file is empty or missing on the server.');
+  }
+  const head = new Uint8Array(await blob.slice(0, 8).arrayBuffer());
+  const startsWithPdf = head[0] === 0x25 && head[1] === 0x50 && head[2] === 0x44 && head[3] === 0x46;
+  const isJson = head[0] === 0x7b; // {
+  if (isJson) {
+    const text = await blob.text();
     try {
       const body = JSON.parse(text);
-      message = body.message || body.error || message;
-    } catch {
-      /* ignore */
+      throw new Error(body.message || body.error || 'Could not open document');
+    } catch (err) {
+      if (err instanceof Error && err.message !== 'Could not open document') throw err;
+      throw new Error('Could not open document');
     }
-    throw new Error(message);
   }
-  return res.data;
+  let type = blob.type || 'application/octet-stream';
+  if (startsWithPdf && !type.includes('pdf')) {
+    type = 'application/pdf';
+  } else if (/\.(jpe?g|png|webp)$/i.test(filename) && !type.startsWith('image/')) {
+    type = 'image/jpeg';
+  }
+  if (type === blob.type) return blob;
+  return new Blob([await blob.arrayBuffer()], { type });
 }
 
 /** Open an authenticated API document (Bearer token) in the in-app viewer or a new tab */
@@ -122,28 +162,22 @@ export async function openAuthenticatedDocument(pathOrUrl, { title } = {}) {
     return;
   }
 
-  let res;
-  try {
-    res = await api.get(pathOrUrl, { responseType: 'blob' });
-  } catch (err) {
-    let message = err.message || 'Could not open document';
-    const data = err.response?.data;
-    if (data instanceof Blob && data.type?.includes('json')) {
-      try {
-        const body = JSON.parse(await data.text());
-        message = body.message || body.error || message;
-      } catch {
-        /* ignore */
-      }
-    } else if (data?.message) {
-      message = data.message;
-    }
-    throw new Error(message);
+  const url = resolveDocumentRequestUrl(pathOrUrl);
+  const token = typeof window !== 'undefined' ? localStorage.getItem('resisure_token') : null;
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseApiErrorMessage(response));
   }
 
-  const blob = await blobFromApiResponse(res, pathOrUrl);
-  const contentType = res.headers['content-type'] || blob.type || 'application/octet-stream';
+  const rawBlob = await response.blob();
   const filename = filenameFromPath(pathOrUrl);
+  const blob = await normalizeDocumentBlob(rawBlob, filename);
+  const contentType = response.headers.get('content-type') || blob.type || 'application/octet-stream';
   const displayTitle = title || filename.replace(/-/g, ' ');
 
   if (showDocumentViewer({

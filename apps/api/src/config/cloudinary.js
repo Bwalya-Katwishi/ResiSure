@@ -9,10 +9,9 @@ const profilesDir = path.join(__dirname, '../../uploads/profiles');
 fs.mkdirSync(uploadsDir, { recursive: true });
 fs.mkdirSync(profilesDir, { recursive: true });
 
-const hasCloudinary =
-  Boolean(process.env.CLOUDINARY_CLOUD_NAME) &&
-  Boolean(process.env.CLOUDINARY_API_KEY) &&
-  Boolean(process.env.CLOUDINARY_API_SECRET);
+const { cloudinaryConfigured, useCloudinaryUploads } = require('../utils/uploadStorage');
+const hasCloudinary = cloudinaryConfigured();
+const storeOnCloudinary = useCloudinaryUploads();
 
 if (hasCloudinary) {
   cloudinary.config({
@@ -30,7 +29,7 @@ const imageFilter = (req, file, cb) => {
   cb(null, true);
 };
 
-const storage = hasCloudinary
+const storage = storeOnCloudinary
   ? new CloudinaryStorage({
       cloudinary,
       params: {
@@ -70,7 +69,7 @@ const handleUpload = (req, res, next) => {
   });
 };
 
-const profileStorage = hasCloudinary
+const profileStorage = storeOnCloudinary
   ? new CloudinaryStorage({
       cloudinary,
       params: {
@@ -130,15 +129,15 @@ async function deleteStoredImage(imageUrl) {
     return;
   }
 
-  if (imageUrl.includes('/uploads/properties/')) {
+  if (imageUrl.includes('/uploads/properties/') || imageUrl.includes('/uploads/profiles/')) {
     const filename = path.basename(imageUrl.split('?')[0]);
-    const filePath = path.join(uploadsDir, filename);
-    fs.unlink(filePath, () => {});
+    const dir = imageUrl.includes('/uploads/profiles/') ? profilesDir : uploadsDir;
+    fs.unlink(path.join(dir, filename), () => {});
   }
 }
 
-if (!hasCloudinary) {
-  console.log('📷 Photo uploads using local storage (Cloudinary credentials not set)');
+if (!storeOnCloudinary) {
+  console.log('Photo and profile uploads stored on this server (apps/api/uploads)');
 }
 
 module.exports = {

@@ -243,7 +243,8 @@ async function persistVerifiedDocument(file) {
 
 
 
-  if (hasCloudinary) {
+  const { useCloudinaryUploads } = require('../utils/uploadStorage');
+  if (useCloudinaryUploads()) {
 
     try {
 

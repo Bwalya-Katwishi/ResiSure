@@ -11,7 +11,10 @@ function streamRemoteDocument(url, res, {
     const request = client.get(url, (upstream) => {
       if (upstream.statusCode && upstream.statusCode >= 400) {
         upstream.resume();
-        reject({ status: 404, message: 'Document file not found' });
+        reject({
+          status: 404,
+          message: 'Could not load this document from storage. Please re-upload it or contact support.',
+        });
         return;
       }
 

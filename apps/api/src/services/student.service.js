@@ -1,17 +1,11 @@
-const fs = require('fs');
 const { validateNrcNumber } = require('@resisure/shared');
 const pool = require('../config/database');
 const NotificationService = require('./notification.service');
 const {
   persistVerifiedDocument,
-  isLocalDocRef,
-  isRemoteDocRef,
-  resolveLocalDocPath,
-  contentTypeForFilename,
-  localFilenameFromRef,
   secureDocUrl,
 } = require('../config/verificationUpload');
-const { streamRemoteDocument } = require('../utils/streamRemoteDoc');
+const { streamVerificationDocumentRef } = require('../utils/streamVerificationDoc');
 
 function withSecureDocAccess(profile, { forAdmin = false } = {}) {
   if (!profile) return null;
@@ -102,27 +96,7 @@ const StudentService = {
     if (!row) throw { status: 404, message: 'Student profile not found' };
 
     const ref = docType === 'nrc' ? row.nrc_doc_url : row.university_slip_url;
-    if (!ref) throw { status: 404, message: 'Document not found' };
-
-    if (isRemoteDocRef(ref)) {
-      const filename = localFilenameFromRef(ref) || `${docType}-document`;
-      await streamRemoteDocument(ref, res, {
-        filename: `${docType}-${filename}`,
-        contentType: contentTypeForFilename(filename),
-      });
-      return;
-    }
-
-    const filePath = resolveLocalDocPath(ref);
-    if (!filePath || !fs.existsSync(filePath)) {
-      throw { status: 404, message: 'Document file not found' };
-    }
-
-    const filename = localFilenameFromRef(ref);
-    res.setHeader('Content-Type', contentTypeForFilename(filename));
-    res.setHeader('Content-Disposition', `inline; filename="${docType}-${filename}"`);
-    res.setHeader('Cache-Control', 'private, no-store');
-    return fs.createReadStream(filePath).pipe(res);
+    await streamVerificationDocumentRef(ref, res, { docType });
   },
 };
 
